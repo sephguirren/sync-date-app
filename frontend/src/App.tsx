@@ -58,7 +58,7 @@ export default function App() {
                 setRoomCode(code);
                 setView('HOST_LOBBY');
             });
-            socket.on('room-ready', (code) => {
+            socket.on('room-ready', () => {
                 setView('HUB');
             });
             socket.on('game-event', (event) => {
