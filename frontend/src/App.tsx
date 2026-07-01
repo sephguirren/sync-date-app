@@ -51,7 +51,7 @@ export default function App() {
             return () => channel.close();
         } else {
             // Socket.io Implementation (Connects to the Node.js server)
-            const socket = io('http://localhost:3001');
+            const socket = io('https://sync-backend-63p7.onrender.com');
             socketRef.current = socket;
 
             socket.on('room-created', (code) => {
