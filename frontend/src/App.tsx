@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-// 1. Update the imports to include the new icons (Scale, Gavel, Timer, Trophy)
-import { Heart, Pencil, Image as ImageIcon, MessageCircle, ArrowLeft, Loader2, Play, Camera, Download, RotateCcw, Scale, Gavel, Timer, Trophy, HelpCircle } from 'lucide-react';
+// 1. Remove MessageCircle from the import list
+import { Heart, Pencil, Image as ImageIcon, ArrowLeft, Loader2, Play, Camera, Download, RotateCcw, Scale, Gavel, Timer, Trophy, HelpCircle } from 'lucide-react';
 
-// 2. Add 'DEBATE' to the ViewState
 type ViewState = 'HOME' | 'HOST_LOBBY' | 'JOIN_LOBBY' | 'HUB' | 'DRAWING' | 'PHOTO_BOOTH' | 'DEBATE' | 'QUIZ';
 
 export default function App() {
@@ -822,7 +821,8 @@ function DebateGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, las
         
         // Wait 3 seconds to simulate "AI Judging"
         setTimeout(() => {
-            const winningStance = Math.random() > 0.5 ? 'FOR' : 'AGAINST';
+            // 2. Add 'as "FOR" | "AGAINST"' to strictly type the winner
+            const winningStance = (Math.random() > 0.5 ? 'FOR' : 'AGAINST') as "FOR" | "AGAINST";
             const reason = verdicts[Math.floor(Math.random() * verdicts.length)];
             const result = { winner: winningStance, reason };
             
