@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-// 1. Remove MessageCircle from the import list
-import { Heart, Pencil, Image as ImageIcon, ArrowLeft, Loader2, Play, Camera, Download, RotateCcw, Scale, Gavel, Timer, Trophy, HelpCircle } from 'lucide-react';
+// 1. Add MonitorPlay and Map to the lucide-react imports
+import { Heart, Pencil, Image as ImageIcon, ArrowLeft, Loader2, Play, Camera, Download, RotateCcw, Scale, Gavel, Timer, Trophy, HelpCircle, MonitorPlay, Map } from 'lucide-react';
 
 type ViewState = 'HOME' | 'HOST_LOBBY' | 'JOIN_LOBBY' | 'HUB' | 'DRAWING' | 'PHOTO_BOOTH' | 'DEBATE' | 'QUIZ';
 
@@ -179,39 +179,55 @@ export default function App() {
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-                <button onClick={() => setView('DRAWING')} className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl shadow-sm hover:shadow-md transition-all border border-transparent hover:border-rose-100 group relative overflow-hidden">
-                    <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                <button onClick={() => setView('DRAWING')} className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl shadow-sm hover:shadow-md transition-all border border-transparent hover:border-rose-100 group relative overflow-hidden text-center">
+                    <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shrink-0">
                         <Pencil className="text-rose-500 w-6 h-6" />
                     </div>
-                    <span className="font-bold text-gray-800 text-sm">Draw Together</span>
-                    <span className="text-xs text-rose-500 font-medium mt-1 flex items-center gap-1"><Play className="w-3 h-3 fill-rose-500"/> Play Now</span>
+                    <span className="font-bold text-gray-800 text-sm mb-1">Draw Together</span>
+                    <span className="text-[11px] text-gray-500 leading-snug">Share a live canvas and doodle together.</span>
                 </button>
 
-                <button onClick={() => setView('PHOTO_BOOTH')} className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl shadow-sm hover:shadow-md transition-all border border-transparent hover:border-rose-100 group relative overflow-hidden">
-                    <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                <button onClick={() => setView('PHOTO_BOOTH')} className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl shadow-sm hover:shadow-md transition-all border border-transparent hover:border-rose-100 group relative overflow-hidden text-center">
+                    <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shrink-0">
                         <ImageIcon className="text-rose-500 w-6 h-6" />
                     </div>
-                    <span className="font-bold text-gray-800 text-sm">Photo Booth</span>
-                    <span className="text-xs text-rose-500 font-medium mt-1 flex items-center gap-1"><Play className="w-3 h-3 fill-rose-500"/> Play Now</span>
+                    <span className="font-bold text-gray-800 text-sm mb-1">Photo Booth</span>
+                    <span className="text-[11px] text-gray-500 leading-snug">Pose and snap 4 synced photos together.</span>
                 </button>
 
-                {/* 3. Make the Debate Court button active */}
-                <button onClick={() => setView('DEBATE')} className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl shadow-sm hover:shadow-md transition-all border border-transparent hover:border-rose-100 group relative overflow-hidden">
-                    <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                <button onClick={() => setView('DEBATE')} className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl shadow-sm hover:shadow-md transition-all border border-transparent hover:border-rose-100 group relative overflow-hidden text-center">
+                    <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shrink-0">
                         <Scale className="text-rose-500 w-6 h-6" />
                     </div>
-                    <span className="font-bold text-gray-800 text-sm">Debate Court</span>
-                    <span className="text-xs text-rose-500 font-medium mt-1 flex items-center gap-1"><Play className="w-3 h-3 fill-rose-500"/> Play Now</span>
+                    <span className="font-bold text-gray-800 text-sm mb-1">Debate Court</span>
+                    <span className="text-[11px] text-gray-500 leading-snug">Argue a topic. Let an AI judge decide who wins.</span>
                 </button>
 
-                {/* 4. Add Couple's Quiz button */}
-                <button onClick={() => setView('QUIZ')} className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl shadow-sm hover:shadow-md transition-all border border-transparent hover:border-rose-100 group relative overflow-hidden">
-                    <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                <button onClick={() => setView('QUIZ')} className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl shadow-sm hover:shadow-md transition-all border border-transparent hover:border-rose-100 group relative overflow-hidden text-center">
+                    <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shrink-0">
                         <HelpCircle className="text-rose-500 w-6 h-6" />
                     </div>
-                    <span className="font-bold text-gray-800 text-sm">Couple's Quiz</span>
-                    <span className="text-xs text-rose-500 font-medium mt-1 flex items-center gap-1"><Play className="w-3 h-3 fill-rose-500"/> Play Now</span>
+                    <span className="font-bold text-gray-800 text-sm mb-1">Couple's Quiz</span>
+                    <span className="text-[11px] text-gray-500 leading-snug">Answer secretly, then reveal to see if you match!</span>
                 </button>
+
+                {/* Watch Together (Coming Soon) */}
+                <div className="flex flex-col items-center justify-center p-6 bg-gray-50 rounded-3xl border border-gray-100 opacity-60 text-center">
+                    <div className="w-12 h-12 bg-gray-200 rounded-2xl flex items-center justify-center mb-3">
+                        <MonitorPlay className="text-gray-500 w-6 h-6" />
+                    </div>
+                    <span className="font-bold text-gray-600 text-sm">Watch Together</span>
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-gray-400 mt-2">Coming Soon</span>
+                </div>
+
+                {/* Snap Hunt (Coming Soon) */}
+                <div className="flex flex-col items-center justify-center p-6 bg-gray-50 rounded-3xl border border-gray-100 opacity-60 text-center">
+                    <div className="w-12 h-12 bg-gray-200 rounded-2xl flex items-center justify-center mb-3">
+                        <Map className="text-gray-500 w-6 h-6" />
+                    </div>
+                    <span className="font-bold text-gray-600 text-sm">Snap Hunt</span>
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-gray-400 mt-2">Coming Soon</span>
+                </div>
             </div>
         </div>
     );
