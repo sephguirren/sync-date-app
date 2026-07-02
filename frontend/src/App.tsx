@@ -49,9 +49,7 @@ export default function App() {
             };
             return () => channel.close();
         } else {
-            // Socket.io Implementation (Connects to the Node.js server)
-            // Replace the URL below with your actual Render URL!
-            const socket = io('https://YOUR-APP-NAME.onrender.com');
+            const socket = io('https://sync-backend-63p7.onrender.com');
             socketRef.current = socket;
 
             socket.on('room-created', (code) => {
