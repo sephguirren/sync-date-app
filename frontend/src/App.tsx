@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { Heart, Pencil, Image as ImageIcon, MessageCircle, ArrowLeft, Loader2, Play } from 'lucide-react';
+import { Heart, Pencil, Image as ImageIcon, MessageCircle, ArrowLeft, Loader2, Play, Camera, Download, RotateCcw } from 'lucide-react';
 
-type ViewState = 'HOME' | 'HOST_LOBBY' | 'JOIN_LOBBY' | 'HUB' | 'DRAWING';
+type ViewState = 'HOME' | 'HOST_LOBBY' | 'JOIN_LOBBY' | 'HUB' | 'DRAWING' | 'PHOTO_BOOTH';
 
 export default function App() {
     // --- Application State ---
@@ -11,6 +11,9 @@ export default function App() {
     const [joinInput, setJoinInput] = useState('');
     const [lastEvent, setLastEvent] = useState<any>(null);
     const [errorMsg, setErrorMsg] = useState('');
+    
+    // --- Network Mode State ---
+    // Set default network mode to 'server' so it always uses your live backend
     const [networkMode] = useState<'demo' | 'server'>('server');
     const channelRef = useRef<BroadcastChannel | null>(null);
     const socketRef = useRef<Socket | null>(null);
@@ -182,7 +185,6 @@ export default function App() {
 
             <div className="grid grid-cols-2 gap-4">
                 <button onClick={() => setView('DRAWING')} className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl shadow-sm hover:shadow-md transition-all border border-transparent hover:border-rose-100 group relative overflow-hidden">
-                    <div className="absolute top-0 left-0 w-full h-1 bg-rose-500" />
                     <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
                         <Pencil className="text-rose-500 w-6 h-6" />
                     </div>
@@ -190,13 +192,13 @@ export default function App() {
                     <span className="text-xs text-rose-500 font-medium mt-1 flex items-center gap-1"><Play className="w-3 h-3 fill-rose-500"/> Play Now</span>
                 </button>
 
-                <div className="flex flex-col items-center justify-center p-6 bg-gray-50 rounded-3xl border border-gray-100 opacity-60">
-                    <div className="w-12 h-12 bg-gray-200 rounded-2xl flex items-center justify-center mb-3">
-                        <ImageIcon className="text-gray-500 w-6 h-6" />
+                <button onClick={() => setView('PHOTO_BOOTH')} className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl shadow-sm hover:shadow-md transition-all border border-transparent hover:border-rose-100 group relative overflow-hidden">
+                    <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                        <ImageIcon className="text-rose-500 w-6 h-6" />
                     </div>
-                    <span className="font-bold text-gray-600 text-sm">Photo Booth</span>
-                    <span className="text-[10px] uppercase font-bold tracking-wider text-gray-400 mt-2">Coming Soon</span>
-                </div>
+                    <span className="font-bold text-gray-800 text-sm">Photo Booth</span>
+                    <span className="text-xs text-rose-500 font-medium mt-1 flex items-center gap-1"><Play className="w-3 h-3 fill-rose-500"/> Play Now</span>
+                </button>
 
                 <div className="flex flex-col items-center justify-center p-6 bg-gray-50 rounded-3xl border border-gray-100 opacity-60">
                     <div className="w-12 h-12 bg-gray-200 rounded-2xl flex items-center justify-center mb-3">
@@ -223,6 +225,13 @@ export default function App() {
                         sendGameEvent({ activity: 'left-drawing' });
                         setView('HUB');
                     }} 
+                />
+            )}
+            {view === 'PHOTO_BOOTH' && (
+                <PhotoBooth 
+                    sendEvent={sendGameEvent} 
+                    lastEvent={lastEvent} 
+                    onBack={() => setView('HUB')} 
                 />
             )}
         </div>
@@ -273,7 +282,6 @@ function DrawingGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, la
             clientY = (e as React.MouseEvent).clientY;
         }
 
-        // Return normalized coordinates (0.0 to 1.0) so it works across different screen sizes
         return {
             x: (clientX - rect.left) / rect.width,
             y: (clientY - rect.top) / rect.height
@@ -354,6 +362,247 @@ function DrawingGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, la
                         style={{ backgroundColor: c }}
                     />
                 ))}
+            </div>
+        </div>
+    );
+}
+
+// --- Interactive Game Component: Photo Booth ---
+function PhotoBooth({ sendEvent, lastEvent, onBack }: { sendEvent: Function, lastEvent: any, onBack: () => void }) {
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const [stream, setStream] = useState<MediaStream | null>(null);
+    const [photos, setPhotos] = useState<string[]>([]);
+    const [countdown, setCountdown] = useState<number | null>(null);
+    const [isFlashing, setIsFlashing] = useState(false);
+    const [hasCameraError, setHasCameraError] = useState(false);
+
+    // 1. Setup webcam stream
+    useEffect(() => {
+        let activeStream: MediaStream;
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
+            .then(s => {
+                activeStream = s;
+                setStream(s);
+                if (videoRef.current) videoRef.current.srcObject = s;
+            })
+            .catch(err => {
+                console.error("Camera error:", err);
+                setHasCameraError(true);
+            });
+
+        return () => {
+            if (activeStream) {
+                activeStream.getTracks().forEach(t => t.stop());
+            }
+        };
+    }, []);
+
+    // 2. Listen for partner starting the booth
+    useEffect(() => {
+        if (lastEvent?.activity === 'start-booth-sequence') {
+            runPhotoSequence();
+        }
+    }, [lastEvent]);
+
+    const handleStartSyncedSequence = () => {
+        sendEvent({ activity: 'start-booth-sequence' });
+        runPhotoSequence();
+    };
+
+    // 3. The 3-Photo Countdown Sequence Loop
+    const runPhotoSequence = async () => {
+        setPhotos([]);
+        
+        for (let frame = 0; frame < 3; frame++) {
+            // Count down: 3, 2, 1
+            for (let c = 3; c > 0; c--) {
+                setCountdown(c);
+                await new Promise(r => setTimeout(r, 1000));
+            }
+            setCountdown(null);
+            
+            // Flash Effect
+            setIsFlashing(true);
+            capturePhoto();
+            
+            // Brief pause before next countdown
+            await new Promise(r => setTimeout(r, 150));
+            setIsFlashing(false);
+            await new Promise(r => setTimeout(r, 850)); 
+        }
+    };
+
+    // 4. Capture exact square frame from video
+    const capturePhoto = () => {
+        if (!videoRef.current) return;
+        const video = videoRef.current;
+        const canvas = document.createElement('canvas');
+        
+        // Ensure square crop
+        const size = Math.min(video.videoWidth, video.videoHeight);
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        
+        // Calculate center crop
+        const startX = (video.videoWidth - size) / 2;
+        const startY = (video.videoHeight - size) / 2;
+        
+        // Draw and mirror the image so it acts like a mirror
+        ctx?.translate(size, 0);
+        ctx?.scale(-1, 1);
+        ctx?.drawImage(video, startX, startY, size, size, 0, 0, size, size);
+        
+        setPhotos(prev => [...prev, canvas.toDataURL('image/jpeg', 0.9)]);
+    };
+
+    // 5. Build and Download the final PNG
+    const downloadStrip = async () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        // Strip dimensions matching the exact aesthetic
+        const imgSize = 400;
+        const padding = 24;
+        const bottomArea = 140; // Room for Logo + Text
+        
+        canvas.width = imgSize + (padding * 2);
+        canvas.height = (imgSize * 3) + (padding * 4) + bottomArea;
+
+        // White base/border
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Load all 3 captured photos
+        const loadedImages = await Promise.all(photos.map(src => {
+            return new Promise<HTMLImageElement>((resolve) => {
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.src = src;
+            });
+        }));
+
+        // Draw each photo into the strip
+        loadedImages.forEach((img, i) => {
+            const y = padding + (i * (imgSize + padding));
+            
+            // Draw dark gray background slot first
+            ctx.fillStyle = '#2d2d2d';
+            ctx.fillRect(padding, y, imgSize, imgSize);
+            // Draw the actual image
+            ctx.drawImage(img, padding, y, imgSize, imgSize);
+        });
+
+        // Draw Logo + Text at the bottom
+        ctx.fillStyle = '#4b5563'; // Tailwind gray-600
+        ctx.font = '700 32px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        
+        const textY = canvas.height - (bottomArea / 2);
+        // Using unicode heart to represent the logo + Sync text
+        ctx.fillText('❤ SYNC', canvas.width / 2, textY);
+
+        // Trigger Download
+        const link = document.createElement('a');
+        link.download = `sync-photobooth-${new Date().getTime()}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+    };
+
+    return (
+        <div className="flex flex-col h-screen max-h-screen p-4 max-w-2xl mx-auto w-full bg-[#ebebeb]">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4 bg-white p-3 rounded-2xl shadow-sm z-10">
+                <button onClick={onBack} className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full transition-colors">
+                    <ArrowLeft className="w-5 h-5" />
+                </button>
+                <h2 className="font-bold text-lg text-gray-800">Photo Booth</h2>
+                <div className="w-9" /> 
+            </div>
+
+            {/* Flash Overlay */}
+            {isFlashing && <div className="fixed inset-0 bg-white z-50 animate-pulse" />}
+
+            {/* Camera View OR Final Strip View */}
+            <div className="flex-1 flex flex-col items-center justify-center overflow-y-auto pb-20 relative">
+                
+                {hasCameraError ? (
+                    <div className="p-8 text-center bg-white rounded-3xl shadow-sm">
+                        <p className="text-gray-600 font-medium">Camera access is required for the photo booth.</p>
+                        <p className="text-sm text-gray-400 mt-2">Please check your browser permissions.</p>
+                    </div>
+                ) : photos.length < 3 ? (
+                    /* Live Camera View */
+                    <div className="relative w-full max-w-[320px] aspect-square rounded-3xl overflow-hidden bg-gray-900 shadow-xl border-4 border-white">
+                        <video 
+                            ref={videoRef} 
+                            autoPlay 
+                            playsInline 
+                            muted 
+                            className="w-full h-full object-cover scale-x-[-1]" // mirror effect
+                        />
+                        {/* Countdown Overlay */}
+                        {countdown !== null && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                                <span className="text-8xl font-black text-white drop-shadow-lg animate-bounce">
+                                    {countdown}
+                                </span>
+                            </div>
+                        )}
+                        {/* Frame Counter */}
+                        <div className="absolute top-4 right-4 bg-black/50 text-white px-3 py-1 rounded-full text-sm font-bold backdrop-blur-sm">
+                            {photos.length}/3
+                        </div>
+                    </div>
+                ) : (
+                    /* Final Strip Display View */
+                    <div className="bg-white p-4 pb-8 rounded-sm shadow-xl flex flex-col gap-4 relative mt-4">
+                        {/* Top Pin (Aesthetic) */}
+                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full bg-gray-300 shadow-md border-b border-gray-400" />
+                        
+                        {/* 3 Photos */}
+                        {photos.map((src, i) => (
+                            <img key={i} src={src} className="w-64 h-64 object-cover bg-gray-800 rounded-sm" alt={`Frame ${i}`} />
+                        ))}
+                        
+                        {/* Bottom Text */}
+                        <div className="mt-4 flex items-center justify-center gap-2 text-gray-600">
+                            <Heart className="w-5 h-5 fill-current" />
+                            <span className="font-bold text-xl tracking-widest uppercase">Sync</span>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Controls Fixed Bottom */}
+            <div className="fixed bottom-6 left-0 right-0 px-6 flex justify-center gap-4 z-10">
+                {photos.length < 3 ? (
+                    <button 
+                        onClick={handleStartSyncedSequence}
+                        disabled={countdown !== null || !stream}
+                        className="bg-rose-500 hover:bg-rose-600 disabled:bg-gray-300 text-white px-8 py-4 rounded-full font-bold text-lg shadow-lg flex items-center gap-3 transition-all active:scale-95"
+                    >
+                        <Camera className="w-6 h-6" />
+                        {countdown !== null ? 'Get Ready...' : 'Start Booth'}
+                    </button>
+                ) : (
+                    <>
+                        <button 
+                            onClick={() => setPhotos([])}
+                            className="bg-white text-gray-700 px-6 py-4 rounded-full font-bold shadow-lg flex items-center gap-2 transition-all active:scale-95 border border-gray-100"
+                        >
+                            <RotateCcw className="w-5 h-5" /> Retake
+                        </button>
+                        <button 
+                            onClick={downloadStrip}
+                            className="bg-gray-900 text-white px-8 py-4 rounded-full font-bold shadow-lg flex items-center gap-2 transition-all active:scale-95"
+                        >
+                            <Download className="w-5 h-5" /> Download Strip
+                        </button>
+                    </>
+                )}
             </div>
         </div>
     );
