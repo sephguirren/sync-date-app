@@ -11,10 +11,7 @@ export default function App() {
     const [joinInput, setJoinInput] = useState('');
     const [lastEvent, setLastEvent] = useState<any>(null);
     const [errorMsg, setErrorMsg] = useState('');
-    
-    // --- Network Mode State ---
-    // Set default network mode to 'server' so it always uses your live backend
-    const [networkMode, setNetworkMode] = useState<'demo' | 'server'>('server');
+    const [networkMode] = useState<'demo' | 'server'>('server');
     const channelRef = useRef<BroadcastChannel | null>(null);
     const socketRef = useRef<Socket | null>(null);
 
