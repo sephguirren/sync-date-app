@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { Heart, Pencil, Image as ImageIcon, MessageCircle, ArrowLeft, Loader2, Play, Camera, Download, RotateCcw, Check } from 'lucide-react';
+import { Heart, Pencil, Image as ImageIcon, MessageCircle, ArrowLeft, Loader2, Play, Camera, Download, RotateCcw} from 'lucide-react';
 
 type ViewState = 'HOME' | 'HOST_LOBBY' | 'JOIN_LOBBY' | 'HUB' | 'DRAWING' | 'PHOTO_BOOTH';
 
