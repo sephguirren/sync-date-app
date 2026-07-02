@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { Heart, Pencil, Image as ImageIcon, MessageCircle, ArrowLeft, Loader2, Play, Camera, Download, RotateCcw} from 'lucide-react';
+// 1. Update the imports to include the new icons (Scale, Gavel, Timer, Trophy)
+import { Heart, Pencil, Image as ImageIcon, MessageCircle, ArrowLeft, Loader2, Play, Camera, Download, RotateCcw, Scale, Gavel, Timer, Trophy, HelpCircle } from 'lucide-react';
 
-type ViewState = 'HOME' | 'HOST_LOBBY' | 'JOIN_LOBBY' | 'HUB' | 'DRAWING' | 'PHOTO_BOOTH';
+// 2. Add 'DEBATE' to the ViewState
+type ViewState = 'HOME' | 'HOST_LOBBY' | 'JOIN_LOBBY' | 'HUB' | 'DRAWING' | 'PHOTO_BOOTH' | 'DEBATE' | 'QUIZ';
 
 export default function App() {
     // --- Application State ---
@@ -194,13 +196,23 @@ export default function App() {
                     <span className="text-xs text-rose-500 font-medium mt-1 flex items-center gap-1"><Play className="w-3 h-3 fill-rose-500"/> Play Now</span>
                 </button>
 
-                <div className="flex flex-col items-center justify-center p-6 bg-gray-50 rounded-3xl border border-gray-100 opacity-60">
-                    <div className="w-12 h-12 bg-gray-200 rounded-2xl flex items-center justify-center mb-3">
-                        <MessageCircle className="text-gray-500 w-6 h-6" />
+                {/* 3. Make the Debate Court button active */}
+                <button onClick={() => setView('DEBATE')} className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl shadow-sm hover:shadow-md transition-all border border-transparent hover:border-rose-100 group relative overflow-hidden">
+                    <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                        <Scale className="text-rose-500 w-6 h-6" />
                     </div>
-                    <span className="font-bold text-gray-600 text-sm">Debate Court</span>
-                    <span className="text-[10px] uppercase font-bold tracking-wider text-gray-400 mt-2">Coming Soon</span>
-                </div>
+                    <span className="font-bold text-gray-800 text-sm">Debate Court</span>
+                    <span className="text-xs text-rose-500 font-medium mt-1 flex items-center gap-1"><Play className="w-3 h-3 fill-rose-500"/> Play Now</span>
+                </button>
+
+                {/* 4. Add Couple's Quiz button */}
+                <button onClick={() => setView('QUIZ')} className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl shadow-sm hover:shadow-md transition-all border border-transparent hover:border-rose-100 group relative overflow-hidden">
+                    <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                        <HelpCircle className="text-rose-500 w-6 h-6" />
+                    </div>
+                    <span className="font-bold text-gray-800 text-sm">Couple's Quiz</span>
+                    <span className="text-xs text-rose-500 font-medium mt-1 flex items-center gap-1"><Play className="w-3 h-3 fill-rose-500"/> Play Now</span>
+                </button>
             </div>
         </div>
     );
@@ -227,6 +239,22 @@ export default function App() {
                     lastEvent={lastEvent} 
                     onBack={() => setView('HUB')} 
                     roomCode={roomCode || joinInput}
+                />
+            )}
+            {/* 4. Render the Debate Game view */}
+            {view === 'DEBATE' && (
+                <DebateGame 
+                    sendEvent={sendGameEvent} 
+                    lastEvent={lastEvent} 
+                    onBack={() => setView('HUB')} 
+                />
+            )}
+            {/* 5. Render the Quiz Game view */}
+            {view === 'QUIZ' && (
+                <QuizGame 
+                    sendEvent={sendGameEvent} 
+                    lastEvent={lastEvent} 
+                    onBack={() => setView('HUB')} 
                 />
             )}
         </div>
@@ -710,6 +738,383 @@ function PhotoBooth({ sendEvent, lastEvent, onBack, roomCode }: { sendEvent: Fun
                     </>
                 )}
             </div>
+        </div>
+    );
+}
+
+// 5. Add the complete DebateGame component at the very bottom of the file
+// --- Interactive Game Component: Debate Court ---
+function DebateGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, lastEvent: any, onBack: () => void }) {
+    const [step, setStep] = useState<'SETUP' | 'DEBATING' | 'JUDGING' | 'RESULT'>('SETUP');
+    const [topic, setTopic] = useState('');
+    const [myStance, setMyStance] = useState<'FOR' | 'AGAINST'>('FOR');
+    const [timeLeft, setTimeLeft] = useState(60);
+    const [verdict, setVerdict] = useState<{winner: 'FOR' | 'AGAINST', reason: string} | null>(null);
+
+    const topics = [
+        "Is a hotdog a sandwich?",
+        "Who takes longer to get ready?",
+        "Pineapple on pizza: Culinary masterpiece or disaster?",
+        "Does the toilet paper roll go over or under?",
+        "Is cereal considered soup?",
+        "Who is the better driver?",
+        "Who is more likely to survive a zombie apocalypse?"
+    ];
+
+    const verdicts = [
+        "The AI Judge was moved to tears by the FOR argument. Pure poetry.",
+        "The AGAINST side brought facts, logic, and intimidation. They win.",
+        "A terrible debate from both sides, but FOR was slightly less terrible.",
+        "AGAINST wins on a technicality. The AI Judge likes their vibes.",
+        "FOR wins. The AI Judge is secretly biased.",
+        "The AI Judge finds the AGAINST argument completely undeniable. Case closed."
+    ];
+
+    // Receive events from the partner
+    useEffect(() => {
+        if (lastEvent?.activity === 'debate-start') {
+            setTopic(lastEvent.topic);
+            setMyStance(lastEvent.peerStance); // Set stance to opposite of initiator
+            setStep('DEBATING');
+            setTimeLeft(60);
+        } else if (lastEvent?.activity === 'debate-judge') {
+            setStep('JUDGING');
+        } else if (lastEvent?.activity === 'debate-result') {
+            setVerdict(lastEvent.verdict);
+            setStep('RESULT');
+        } else if (lastEvent?.activity === 'debate-reset') {
+            setStep('SETUP');
+            setTopic('');
+            setVerdict(null);
+        }
+    }, [lastEvent]);
+
+    // Timer logic
+    useEffect(() => {
+        if (step === 'DEBATING' && timeLeft > 0) {
+            const timer = setTimeout(() => setTimeLeft(t => t - 1), 1000);
+            return () => clearTimeout(timer);
+        } else if (step === 'DEBATING' && timeLeft === 0) {
+            // To avoid race conditions, only the 'FOR' player triggers the judgment phase
+            if (myStance === 'FOR') {
+                handleTimeUp();
+            }
+        }
+    }, [step, timeLeft, myStance]);
+
+    const handleStart = () => {
+        const randomTopic = topics[Math.floor(Math.random() * topics.length)];
+        const randomStance = Math.random() > 0.5 ? 'FOR' : 'AGAINST';
+        const peerStance = randomStance === 'FOR' ? 'AGAINST' : 'FOR';
+        
+        setTopic(randomTopic);
+        setMyStance(randomStance);
+        setStep('DEBATING');
+        setTimeLeft(60);
+        
+        // Broadcast start
+        sendEvent({ activity: 'debate-start', topic: randomTopic, peerStance });
+    };
+
+    const handleTimeUp = () => {
+        setStep('JUDGING');
+        sendEvent({ activity: 'debate-judge' });
+        
+        // Wait 3 seconds to simulate "AI Judging"
+        setTimeout(() => {
+            const winningStance = Math.random() > 0.5 ? 'FOR' : 'AGAINST';
+            const reason = verdicts[Math.floor(Math.random() * verdicts.length)];
+            const result = { winner: winningStance, reason };
+            
+            setVerdict(result);
+            setStep('RESULT');
+            sendEvent({ activity: 'debate-result', verdict: result });
+        }, 3000);
+    };
+
+    const handleReset = () => {
+        setStep('SETUP');
+        setTopic('');
+        setVerdict(null);
+        sendEvent({ activity: 'debate-reset' });
+    };
+
+    return (
+        <div className="flex flex-col h-screen max-h-screen p-4 max-w-2xl mx-auto w-full bg-rose-50/30">
+            <div className="flex items-center justify-between mb-4 bg-white p-3 rounded-2xl shadow-sm shrink-0">
+                <button onClick={onBack} className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full transition-colors">
+                    <ArrowLeft className="w-5 h-5" />
+                </button>
+                <h2 className="font-bold text-lg text-gray-800">Debate Court</h2>
+                <div className="w-9" />
+            </div>
+
+            {step === 'SETUP' && (
+                <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+                    <div className="w-24 h-24 bg-rose-100 rounded-full flex items-center justify-center mb-6 shadow-inner">
+                        <Gavel className="w-12 h-12 text-rose-500" />
+                    </div>
+                    <h2 className="text-3xl font-black text-gray-900 mb-4 tracking-tight">Couples Court</h2>
+                    <p className="text-gray-500 mb-10 text-lg leading-relaxed">
+                        Settle it in court. One random topic. 60 seconds to argue on camera. <br/><br/>
+                        <strong>The AI Judge</strong> will hear your arguments and deliver a final, binding verdict.
+                    </p>
+                    <button onClick={handleStart} className="w-full max-w-sm bg-rose-500 hover:bg-rose-600 text-white rounded-2xl py-4 font-bold text-lg shadow-lg shadow-rose-200 transition-all active:scale-95">
+                        Start Trial
+                    </button>
+                </div>
+            )}
+
+            {step === 'DEBATING' && (
+                <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+                    <h3 className="text-gray-400 font-bold uppercase tracking-widest text-xs mb-3">The Topic</h3>
+                    <div className="bg-white p-6 rounded-3xl shadow-sm border border-rose-50 mb-8 w-full max-w-sm">
+                        <h1 className="text-2xl font-black text-gray-900 leading-tight">{topic}</h1>
+                    </div>
+                    
+                    <div className={`p-6 rounded-3xl w-full max-w-sm border-2 mb-10 shadow-sm transition-colors ${myStance === 'FOR' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-700'}`}>
+                        <span className="block text-sm font-bold uppercase mb-1 opacity-70 tracking-widest">You are arguing</span>
+                        <span className="text-4xl font-black tracking-tight">{myStance}</span>
+                    </div>
+
+                    <div className="relative flex items-center justify-center w-36 h-36">
+                        <svg className="absolute inset-0 w-full h-full transform -rotate-90 drop-shadow-sm">
+                            <circle cx="72" cy="72" r="66" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-white" />
+                            <circle cx="72" cy="72" r="66" stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray="414" strokeDashoffset={414 - (414 * timeLeft) / 60} className="text-rose-500 transition-all duration-1000 ease-linear" strokeLinecap="round" />
+                        </svg>
+                        <div className="absolute flex flex-col items-center justify-center">
+                            <Timer className="w-6 h-6 text-gray-400 mb-1" />
+                            <span className="text-4xl font-black text-gray-800 tabular-nums tracking-tighter">{timeLeft}</span>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {step === 'JUDGING' && (
+                <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+                    <div className="w-24 h-24 bg-white shadow-sm border border-gray-100 rounded-full flex items-center justify-center mb-8 animate-pulse">
+                        <Loader2 className="w-10 h-10 text-gray-400 animate-spin" />
+                    </div>
+                    <h2 className="text-2xl font-black text-gray-800 tracking-tight">The Judge is deliberating...</h2>
+                    <p className="text-gray-500 mt-3 text-lg">Weighing the evidence and analyzing the arguments.</p>
+                </div>
+            )}
+
+            {step === 'RESULT' && (
+                <div className="flex-1 flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in duration-500">
+                    <div className={`w-28 h-28 rounded-full flex items-center justify-center mb-6 shadow-inner ${verdict?.winner === myStance ? 'bg-emerald-100' : 'bg-gray-200'}`}>
+                        <Trophy className={`w-14 h-14 ${verdict?.winner === myStance ? 'text-emerald-500' : 'text-gray-400'}`} />
+                    </div>
+                    <h2 className={`text-4xl font-black mb-2 tracking-tight ${verdict?.winner === myStance ? 'text-emerald-600' : 'text-gray-800'}`}>
+                        {verdict?.winner === myStance ? 'You Won!' : 'You Lost.'}
+                    </h2>
+                    
+                    <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 mt-8 w-full max-w-sm relative">
+                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[10px] uppercase font-black tracking-widest px-4 py-1.5 rounded-full shadow-md">
+                            Official Verdict
+                        </div>
+                        <p className="text-gray-600 font-medium text-lg leading-relaxed mt-2">{verdict?.reason}</p>
+                    </div>
+
+                    <button onClick={handleReset} className="w-full max-w-sm mt-10 bg-white border-2 border-rose-100 text-rose-600 rounded-2xl py-4 font-bold text-lg shadow-sm hover:bg-rose-50 transition-all active:scale-95">
+                        Demand a Rematch
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// --- Interactive Game Component: Couple's Quiz ---
+function QuizGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, lastEvent: any, onBack: () => void }) {
+    const [step, setStep] = useState<'SETUP' | 'ANSWERING' | 'REVEAL' | 'END'>('SETUP');
+    const [questions, setQuestions] = useState<string[]>([]);
+    const [currentIndex, setCurrentIndex] = useState(0);
+    const [myAnswer, setMyAnswer] = useState('');
+    const [peerAnswer, setPeerAnswer] = useState<string | null>(null);
+    const [isLocked, setIsLocked] = useState(false);
+    const [peerLocked, setPeerLocked] = useState(false);
+
+    const ALL_QUESTIONS = [
+        "What is your partner's favorite comfort food?",
+        "What is your partner's dream travel destination?",
+        "What is the first movie you watched together?",
+        "What is your partner's go-to drink order?",
+        "What is your partner's weirdest quirk?",
+        "Who said 'I love you' first?",
+        "What is your partner's hidden talent?",
+        "What is your partner's biggest pet peeve?",
+        "What was your partner's childhood dream job?",
+        "What is the best gift you've ever given them?",
+        "If they could eat only one food forever, what is it?",
+        "What is their favorite song right now?"
+    ];
+
+    useEffect(() => {
+        if (lastEvent?.activity === 'quiz-start') {
+            setQuestions(lastEvent.questions);
+            setCurrentIndex(0);
+            resetRound();
+            setStep('ANSWERING');
+        } else if (lastEvent?.activity === 'quiz-lock') {
+            setPeerAnswer(lastEvent.answer);
+            setPeerLocked(true);
+        } else if (lastEvent?.activity === 'quiz-next') {
+            const { nextIdx, total } = lastEvent;
+            if (nextIdx >= total) {
+                setStep('END');
+            } else {
+                setCurrentIndex(nextIdx);
+                resetRound();
+                setStep('ANSWERING');
+            }
+        } else if (lastEvent?.activity === 'quiz-reset') {
+            setStep('SETUP');
+        }
+    }, [lastEvent]);
+
+    useEffect(() => {
+        if (isLocked && peerLocked && step === 'ANSWERING') {
+            setStep('REVEAL');
+        }
+    }, [isLocked, peerLocked, step]);
+
+    const resetRound = () => {
+        setMyAnswer('');
+        setPeerAnswer(null);
+        setIsLocked(false);
+        setPeerLocked(false);
+    };
+
+    const startGame = () => {
+        const shuffled = [...ALL_QUESTIONS].sort(() => 0.5 - Math.random()).slice(0, 5);
+        setQuestions(shuffled);
+        setCurrentIndex(0);
+        resetRound();
+        setStep('ANSWERING');
+        sendEvent({ activity: 'quiz-start', questions: shuffled });
+    };
+
+    const lockAnswer = () => {
+        if (!myAnswer.trim()) return;
+        setIsLocked(true);
+        sendEvent({ activity: 'quiz-lock', answer: myAnswer });
+    };
+
+    const handleNext = () => {
+        const nextIdx = currentIndex + 1;
+        sendEvent({ activity: 'quiz-next', nextIdx, total: questions.length });
+        
+        if (nextIdx >= questions.length) {
+            setStep('END');
+        } else {
+            setCurrentIndex(nextIdx);
+            resetRound();
+            setStep('ANSWERING');
+        }
+    };
+
+    const handleReset = () => {
+        setStep('SETUP');
+        sendEvent({ activity: 'quiz-reset' });
+    };
+
+    return (
+        <div className="flex flex-col h-screen max-h-screen p-4 max-w-2xl mx-auto w-full bg-rose-50/30">
+            <div className="flex items-center justify-between mb-4 bg-white p-3 rounded-2xl shadow-sm shrink-0">
+                <button onClick={onBack} className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full transition-colors">
+                    <ArrowLeft className="w-5 h-5" />
+                </button>
+                <h2 className="font-bold text-lg text-gray-800">Couple's Quiz</h2>
+                <div className="w-9" />
+            </div>
+
+            {step === 'SETUP' && (
+                <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+                    <div className="w-24 h-24 bg-rose-100 rounded-full flex items-center justify-center mb-6 shadow-inner">
+                        <HelpCircle className="w-12 h-12 text-rose-500" />
+                    </div>
+                    <h2 className="text-3xl font-black text-gray-900 mb-4 tracking-tight">How Well Do You Know Me?</h2>
+                    <p className="text-gray-500 mb-10 text-lg leading-relaxed">
+                        A true compatibility test. 5 random questions. You both lock in your answers privately, then reveal them at the exact same time.
+                    </p>
+                    <button onClick={startGame} className="w-full max-w-sm bg-rose-500 hover:bg-rose-600 text-white rounded-2xl py-4 font-bold text-lg shadow-lg shadow-rose-200 transition-all active:scale-95">
+                        Start Quiz
+                    </button>
+                </div>
+            )}
+
+            {step === 'ANSWERING' && (
+                <div className="flex-1 flex flex-col items-center justify-center p-6 text-center w-full max-w-md mx-auto">
+                    <div className="w-full flex justify-between items-center mb-6">
+                        <span className="text-sm font-bold text-gray-400 uppercase tracking-widest">Question {currentIndex + 1} of 5</span>
+                        {peerLocked && <span className="text-xs bg-emerald-100 text-emerald-600 px-3 py-1 rounded-full font-bold animate-pulse">Partner Locked</span>}
+                    </div>
+                    
+                    <h2 className="text-2xl font-black text-gray-900 mb-8 leading-tight">{questions[currentIndex]}</h2>
+
+                    <textarea 
+                        value={myAnswer}
+                        onChange={e => setMyAnswer(e.target.value)}
+                        disabled={isLocked}
+                        placeholder="Type your answer..."
+                        className="w-full bg-white border-2 border-rose-100 rounded-3xl p-6 min-h-[140px] text-lg outline-none focus:border-rose-400 focus:ring-4 focus:ring-rose-100 transition-all resize-none shadow-sm disabled:bg-gray-50 disabled:text-gray-500"
+                    />
+
+                    {isLocked ? (
+                        <div className="mt-8 flex items-center justify-center gap-3 text-gray-500 font-medium bg-white px-6 py-4 rounded-full shadow-sm border border-gray-100 w-full">
+                            <Loader2 className="w-5 h-5 animate-spin text-rose-400" />
+                            Waiting for partner...
+                        </div>
+                    ) : (
+                        <button 
+                            onClick={lockAnswer} 
+                            disabled={!myAnswer.trim()}
+                            className="w-full mt-8 bg-rose-500 disabled:bg-rose-300 hover:bg-rose-600 text-white rounded-2xl py-4 font-bold text-lg shadow-lg shadow-rose-200 transition-all active:scale-95"
+                        >
+                            Lock In Answer
+                        </button>
+                    )}
+                </div>
+            )}
+
+            {step === 'REVEAL' && (
+                <div className="flex-1 flex flex-col items-center justify-center p-6 w-full max-w-sm mx-auto animate-in fade-in zoom-in duration-500">
+                    <h3 className="text-gray-400 font-bold uppercase tracking-widest text-xs mb-8 text-center">{questions[currentIndex]}</h3>
+                    
+                    <div className="flex flex-col gap-6 w-full">
+                        <div className="bg-emerald-50 border-2 border-emerald-100 rounded-3xl p-6 text-center shadow-sm relative">
+                            <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full shadow-md">Your Answer</div>
+                            <p className="text-xl font-bold text-emerald-800 mt-2">{myAnswer}</p>
+                        </div>
+
+                        <div className="bg-rose-50 border-2 border-rose-100 rounded-3xl p-6 text-center shadow-sm relative">
+                            <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-rose-500 text-white text-[10px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full shadow-md">Partner's Answer</div>
+                            <p className="text-xl font-bold text-rose-800 mt-2">{peerAnswer}</p>
+                        </div>
+                        
+                        <button onClick={handleNext} className="mt-8 w-full bg-gray-900 hover:bg-black text-white rounded-2xl py-4 font-bold text-lg shadow-lg shadow-gray-200 transition-all active:scale-95">
+                            Next Question
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {step === 'END' && (
+                <div className="flex-1 flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in duration-500">
+                    <div className="w-28 h-28 bg-rose-100 rounded-full flex items-center justify-center mb-6 shadow-inner">
+                        <Heart className="w-14 h-14 text-rose-500 fill-rose-500" />
+                    </div>
+                    <h2 className="text-4xl font-black text-gray-900 mb-2 tracking-tight">Quiz Complete!</h2>
+                    <p className="text-gray-500 font-medium text-lg leading-relaxed mt-2 max-w-xs">
+                        How well did you do? Remember, it's not about being perfect, it's about learning more about each other.
+                    </p>
+
+                    <button onClick={handleReset} className="w-full max-w-sm mt-10 bg-rose-500 hover:bg-rose-600 text-white rounded-2xl py-4 font-bold text-lg shadow-lg shadow-rose-200 transition-all active:scale-95">
+                        Play Again
+                    </button>
+                </div>
+            )}
         </div>
     );
 }
