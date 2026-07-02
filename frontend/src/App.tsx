@@ -13,9 +13,8 @@ export default function App() {
     const [errorMsg, setErrorMsg] = useState('');
     
     // --- Network Mode State ---
-    // 'demo' uses the browser's BroadcastChannel so you can test in two tabs without a server
-    // 'server' connects to the actual Node.js Socket.io backend
-    const [networkMode, setNetworkMode] = useState<'demo' | 'server'>('demo');
+    // Set default network mode to 'server' so it always uses your live backend
+    const [networkMode, setNetworkMode] = useState<'demo' | 'server'>('server');
     const channelRef = useRef<BroadcastChannel | null>(null);
     const socketRef = useRef<Socket | null>(null);
 
@@ -51,7 +50,8 @@ export default function App() {
             return () => channel.close();
         } else {
             // Socket.io Implementation (Connects to the Node.js server)
-            const socket = io('https://sync-backend-63p7.onrender.com');
+            // Replace the URL below with your actual Render URL!
+            const socket = io('https://YOUR-APP-NAME.onrender.com');
             socketRef.current = socket;
 
             socket.on('room-created', (code) => {
@@ -134,6 +134,9 @@ export default function App() {
 
     const renderHostLobby = () => (
         <div className="flex flex-col items-center justify-center min-h-[80vh] w-full max-w-md mx-auto text-center px-6">
+            <button onClick={() => { setView('HOME'); setRoomCode(''); }} className="absolute top-6 left-6 p-3 bg-white text-gray-500 rounded-full shadow-sm hover:bg-gray-50">
+                <ArrowLeft className="w-5 h-5" />
+            </button>
             <h2 className="text-2xl font-bold text-gray-800 mb-6">Your Room Code</h2>
             <div className="text-5xl tracking-[0.25em] font-mono font-black text-rose-500 mb-10 bg-rose-50 py-8 px-4 rounded-3xl border border-rose-100 w-full shadow-inner">
                 {roomCode}
@@ -226,18 +229,6 @@ export default function App() {
                         setView('HUB');
                     }} 
                 />
-            )}
-
-            {/* Network Toggle Footer */}
-            {view === 'HOME' && (
-                <div className="fixed bottom-6 left-0 right-0 flex justify-center">
-                    <button
-                        onClick={() => setNetworkMode(m => m === 'demo' ? 'server' : 'demo')}
-                        className="text-xs text-gray-400 hover:text-rose-500 transition-colors bg-white px-4 py-2 rounded-full shadow-sm border border-gray-100"
-                    >
-                        {networkMode === 'demo' ? '⚡ Demo Mode Active (Click to use Node.js)' : '🌐 Node.js Mode Active (Click to use Demo)'}
-                    </button>
-                </div>
             )}
         </div>
     );
