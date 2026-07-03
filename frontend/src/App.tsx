@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-// 1. Add MonitorPlay and Map to the lucide-react imports
-import { Heart, Pencil, Image as ImageIcon, ArrowLeft, Loader2, Camera, Download, RotateCcw, Scale, Gavel, Timer, Trophy, HelpCircle, MonitorPlay, Map } from 'lucide-react';
+// Added Mic, MicOff, Video, and VideoOff for the Watch Together controls
+import { Heart, Pencil, Image as ImageIcon, ArrowLeft, Loader2, Camera, Download, RotateCcw, Scale, Gavel, Timer, Trophy, HelpCircle, MonitorPlay, Map, MonitorUp, Mic, MicOff, Video, VideoOff } from 'lucide-react';
 
-type ViewState = 'HOME' | 'HOST_LOBBY' | 'JOIN_LOBBY' | 'HUB' | 'DRAWING' | 'PHOTO_BOOTH' | 'DEBATE' | 'QUIZ';
+// Added 'WATCH_TOGETHER' to the view states
+type ViewState = 'HOME' | 'HOST_LOBBY' | 'JOIN_LOBBY' | 'HUB' | 'DRAWING' | 'PHOTO_BOOTH' | 'DEBATE' | 'QUIZ' | 'WATCH_TOGETHER';
 
 export default function App() {
     // --- Application State ---
@@ -12,6 +13,7 @@ export default function App() {
     const [joinInput, setJoinInput] = useState('');
     const [lastEvent, setLastEvent] = useState<any>(null);
     const [errorMsg, setErrorMsg] = useState('');
+    const [legalModal, setLegalModal] = useState<'NONE' | 'PRIVACY' | 'TERMS'>('NONE');
     
     // --- Network Mode State ---
     const [networkMode] = useState<'demo' | 'server'>('server');
@@ -107,23 +109,84 @@ export default function App() {
     };
 
     const renderHome = () => (
-        <div className="flex flex-col items-center justify-center min-h-[80vh] w-full max-w-md mx-auto text-center px-6">
-            <div className="w-20 h-20 bg-rose-100 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-sm rotate-3">
-                <Heart className="text-rose-500 w-10 h-10 fill-rose-500 animate-pulse" />
-            </div>
-            <h1 className="text-4xl font-extrabold text-gray-900 mb-3 tracking-tight">Sync</h1>
-            <p className="text-gray-500 mb-10 text-lg">Fun dates & activities for long distance relationships.</p>
+        <div className="flex flex-col min-h-screen w-full max-w-md mx-auto text-center px-6">
+            <div className="flex-1 flex flex-col items-center justify-center w-full py-10">
+                <div className="w-20 h-20 bg-rose-100 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-sm rotate-3">
+                    <Heart className="text-rose-500 w-10 h-10 fill-rose-500 animate-pulse" />
+                </div>
+                <h1 className="text-4xl font-extrabold text-gray-900 mb-3 tracking-tight">Sync</h1>
+                <p className="text-gray-500 mb-10 text-lg">Fun dates & activities for long distance relationships.</p>
 
-            <div className="w-full space-y-4">
-                <button onClick={createRoom} className="w-full bg-rose-500 hover:bg-rose-600 text-white rounded-2xl py-4 font-bold text-lg transition-all active:scale-[0.98] shadow-lg shadow-rose-200">
-                    Create a Date
-                </button>
-                <button onClick={() => setView('JOIN_LOBBY')} className="w-full bg-white border-2 border-rose-100 text-rose-600 hover:bg-rose-50 rounded-2xl py-4 font-bold text-lg transition-all active:scale-[0.98]">
-                    Join with Code
-                </button>
+                <div className="w-full space-y-4">
+                    <button onClick={createRoom} className="w-full bg-rose-500 hover:bg-rose-600 text-white rounded-2xl py-4 font-bold text-lg transition-all active:scale-[0.98] shadow-lg shadow-rose-200">
+                        Create a Date
+                    </button>
+                    <button onClick={() => setView('JOIN_LOBBY')} className="w-full bg-white border-2 border-rose-100 text-rose-600 hover:bg-rose-50 rounded-2xl py-4 font-bold text-lg transition-all active:scale-[0.98]">
+                        Join with Code
+                    </button>
+                </div>
             </div>
+            
+            {/* Footer */}
+            <footer className="w-full py-6 mt-auto text-center border-t border-rose-100/50">
+                <p className="text-xs text-gray-400 font-medium mb-2">
+                    &copy; {new Date().getFullYear()} Mark Joseph Guirren. All rights reserved.
+                </p>
+                <div className="flex justify-center items-center gap-4 text-xs text-rose-500/70">
+                    <button onClick={() => setLegalModal('PRIVACY')} className="hover:text-rose-600 transition-colors">Privacy Policy</button>
+                    <span>&middot;</span>
+                    <button onClick={() => setLegalModal('TERMS')} className="hover:text-rose-600 transition-colors">Terms of Service</button>
+                </div>
+            </footer>
         </div>
     );
+
+    const renderLegalModal = () => {
+        if (legalModal === 'NONE') return null;
+        
+        const isPrivacy = legalModal === 'PRIVACY';
+        const title = isPrivacy ? "Privacy Policy" : "Terms of Service";
+        
+        return (
+            <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                <div className="bg-white w-full max-w-lg max-h-[80vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
+                    <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                        <h2 className="text-xl font-bold text-gray-900">{title}</h2>
+                    </div>
+                    <div className="p-6 overflow-y-auto flex-1 text-sm text-gray-600 space-y-4">
+                        {isPrivacy ? (
+                            <>
+                                <p><strong>Last Updated:</strong> July 2026</p>
+                                <p>Welcome to Sync. Your privacy is critically important to us. This policy outlines how we handle your data.</p>
+                                <h3 className="font-bold text-gray-800 text-base mt-4">1. Data Collection</h3>
+                                <p>Sync is designed to be ephemeral. We do not store your chat logs, drawings, photos, or video streams on our servers. All visual and audio communication is handled peer-to-peer.</p>
+                                <h3 className="font-bold text-gray-800 text-base mt-4">2. WebRTC and Camera Access</h3>
+                                <p>To use the Watch Together and Photo Booth features, the app requests access to your camera and microphone. This stream is transmitted directly to your partner's device and is never recorded or intercepted by our servers.</p>
+                                <h3 className="font-bold text-gray-800 text-base mt-4">3. Local Storage</h3>
+                                <p>Downloaded photos and game results are saved directly to your local device. We do not keep copies of your memories.</p>
+                            </>
+                        ) : (
+                            <>
+                                <p><strong>Last Updated:</strong> July 2026</p>
+                                <p>By using Sync, you agree to these Terms of Service. Please read them carefully.</p>
+                                <h3 className="font-bold text-gray-800 text-base mt-4">1. Acceptable Use</h3>
+                                <p>Sync is built for fun, connection, and long-distance dates. You agree not to use the service for any illegal, harmful, or abusive activities.</p>
+                                <h3 className="font-bold text-gray-800 text-base mt-4">2. Provided "As Is"</h3>
+                                <p>This application is provided "as is" without any warranties. We are not responsible for dropped connections, lost drawings, or interrupted movie streams.</p>
+                                <h3 className="font-bold text-gray-800 text-base mt-4">3. User Content</h3>
+                                <p>You are solely responsible for the content you stream, draw, or share over the platform. Because connections are peer-to-peer, we cannot and do not moderate user behavior.</p>
+                            </>
+                        )}
+                    </div>
+                    <div className="p-4 border-t border-gray-100 bg-gray-50 text-center">
+                        <button onClick={() => setLegalModal('NONE')} className="w-full bg-rose-500 hover:bg-rose-600 text-white rounded-xl py-3 font-bold transition-all active:scale-[0.98]">
+                            I Understand
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
 
     const renderHostLobby = () => (
         <div className="flex flex-col items-center justify-center min-h-[80vh] w-full max-w-md mx-auto text-center px-6">
@@ -211,17 +274,20 @@ export default function App() {
                     <span className="text-[11px] text-gray-500 leading-snug">Answer secretly, then reveal to see if you match!</span>
                 </button>
 
-                {/* Watch Together (Coming Soon) */}
-                <div className="flex flex-col items-center justify-center p-6 bg-gray-50 rounded-3xl border border-gray-100 opacity-60 text-center">
-                    <div className="w-12 h-12 bg-gray-200 rounded-2xl flex items-center justify-center mb-3">
-                        <MonitorPlay className="text-gray-500 w-6 h-6" />
+                {/* Watch Together */}
+                <button onClick={() => {
+                    sendGameEvent({ activity: 'watch-together-request' });
+                    setView('WATCH_TOGETHER');
+                }} className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl shadow-sm hover:shadow-md transition-all border border-transparent hover:border-rose-100 group relative overflow-hidden text-center col-span-2 sm:col-span-1">
+                    <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shrink-0">
+                        <MonitorPlay className="text-rose-500 w-6 h-6" />
                     </div>
-                    <span className="font-bold text-gray-600 text-sm">Watch Together</span>
-                    <span className="text-[10px] uppercase font-bold tracking-wider text-gray-400 mt-2">Coming Soon</span>
-                </div>
+                    <span className="font-bold text-gray-800 text-sm mb-1">Watch Together</span>
+                    <span className="text-[11px] text-gray-500 leading-snug">Screen share and video chat live.</span>
+                </button>
 
                 {/* Snap Hunt (Coming Soon) */}
-                <div className="flex flex-col items-center justify-center p-6 bg-gray-50 rounded-3xl border border-gray-100 opacity-60 text-center">
+                <div className="flex flex-col items-center justify-center p-6 bg-gray-50 rounded-3xl border border-gray-100 opacity-60 text-center col-span-2 sm:col-span-1">
                     <div className="w-12 h-12 bg-gray-200 rounded-2xl flex items-center justify-center mb-3">
                         <Map className="text-gray-500 w-6 h-6" />
                     </div>
@@ -256,7 +322,6 @@ export default function App() {
                     roomCode={roomCode || joinInput}
                 />
             )}
-            {/* 4. Render the Debate Game view */}
             {view === 'DEBATE' && (
                 <DebateGame 
                     sendEvent={sendGameEvent} 
@@ -264,7 +329,6 @@ export default function App() {
                     onBack={() => setView('HUB')} 
                 />
             )}
-            {/* 5. Render the Quiz Game view */}
             {view === 'QUIZ' && (
                 <QuizGame 
                     sendEvent={sendGameEvent} 
@@ -272,6 +336,15 @@ export default function App() {
                     onBack={() => setView('HUB')} 
                 />
             )}
+            {view === 'WATCH_TOGETHER' && (
+                <WatchTogether 
+                    sendEvent={sendGameEvent} 
+                    lastEvent={lastEvent} 
+                    onBack={() => setView('HUB')} 
+                    isHost={!!roomCode}
+                />
+            )}
+            {renderLegalModal()}
         </div>
     );
 }
@@ -408,20 +481,14 @@ type PhotoFrame = { local: string | null; peer: string | null };
 function PhotoBooth({ sendEvent, lastEvent, onBack, roomCode }: { sendEvent: Function, lastEvent: any, onBack: () => void, roomCode: string }) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const [stream, setStream] = useState<MediaStream | null>(null);
-    
-    // Store both local and peer images for 4 frames
     const [frames, setFrames] = useState<PhotoFrame[]>([]);
-    
     const [countdown, setCountdown] = useState<number | null>(null);
     const [isFlashing, setIsFlashing] = useState(false);
     const [hasCameraError, setHasCameraError] = useState(false);
     const [isShooting, setIsShooting] = useState(false);
-
-    // Customization state
     const [bgColor, setBgColor] = useState('#ffffff');
     const backgroundColors = ['#ffffff', '#000000', '#fcd34d', '#f472b6', '#38bdf8', '#22c55e', '#1f2937'];
 
-    // 1. Setup webcam stream
     useEffect(() => {
         let activeStream: MediaStream;
         navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
@@ -442,7 +509,6 @@ function PhotoBooth({ sendEvent, lastEvent, onBack, roomCode }: { sendEvent: Fun
         };
     }, []);
 
-    // 2. Listen for partner events
     useEffect(() => {
         if (lastEvent?.activity === 'start-booth-sequence') {
             runPhotoSequence();
@@ -462,28 +528,21 @@ function PhotoBooth({ sendEvent, lastEvent, onBack, roomCode }: { sendEvent: Fun
         runPhotoSequence();
     };
 
-    // 3. The 4-Photo Countdown Sequence Loop
     const runPhotoSequence = async () => {
         setFrames([]);
         setIsShooting(true);
         
         for (let frameIndex = 0; frameIndex < 4; frameIndex++) {
-            // Count down: 3, 2, 1
             for (let c = 3; c > 0; c--) {
                 setCountdown(c);
                 await new Promise(r => setTimeout(r, 1000));
             }
             setCountdown(null);
-            
-            // Flash Effect
             setIsFlashing(true);
             
-            // Capture and Send
             const localImg = capturePortraitPhoto();
             if (localImg) {
                 sendEvent({ activity: 'booth-frame', index: frameIndex, image: localImg });
-                
-                // Save locally
                 setFrames(prev => {
                     const newFrames = [...prev];
                     if (!newFrames[frameIndex]) newFrames[frameIndex] = { local: null, peer: null };
@@ -492,7 +551,6 @@ function PhotoBooth({ sendEvent, lastEvent, onBack, roomCode }: { sendEvent: Fun
                 });
             }
             
-            // Pause before next countdown
             await new Promise(r => setTimeout(r, 150));
             setIsFlashing(false);
             await new Promise(r => setTimeout(r, 850)); 
@@ -500,13 +558,10 @@ function PhotoBooth({ sendEvent, lastEvent, onBack, roomCode }: { sendEvent: Fun
         setIsShooting(false);
     };
 
-    // 4. Capture 3:4 portrait frame from video
     const capturePortraitPhoto = () => {
         if (!videoRef.current) return null;
         const video = videoRef.current;
         const canvas = document.createElement('canvas');
-        
-        // Target 3:4 aspect ratio (e.g., 300x400)
         const targetW = 300;
         const targetH = 400;
         canvas.width = targetW;
@@ -515,7 +570,6 @@ function PhotoBooth({ sendEvent, lastEvent, onBack, roomCode }: { sendEvent: Fun
         const ctx = canvas.getContext('2d');
         if (!ctx) return null;
 
-        // Calculate center crop
         const videoRatio = video.videoWidth / video.videoHeight;
         const targetRatio = targetW / targetH;
         let sWidth = video.videoWidth;
@@ -524,47 +578,36 @@ function PhotoBooth({ sendEvent, lastEvent, onBack, roomCode }: { sendEvent: Fun
         let sY = 0;
 
         if (videoRatio > targetRatio) {
-            // Video is wider than target
             sWidth = sHeight * targetRatio;
             sX = (video.videoWidth - sWidth) / 2;
         } else {
-            // Video is taller than target
             sHeight = sWidth / targetRatio;
             sY = (video.videoHeight - sHeight) / 2;
         }
         
-        // Draw and mirror the image
         ctx.translate(targetW, 0);
         ctx.scale(-1, 1);
         ctx.drawImage(video, sX, sY, sWidth, sHeight, 0, 0, targetW, targetH);
-        
-        // Use JPEG to keep socket payload size small
         return canvas.toDataURL('image/jpeg', 0.8);
     };
 
-    // 5. Build and Download the final PNG
     const downloadStrip = async () => {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        // Strip dimensions matching the exact aesthetic with 4 frames
         const portraitW = 300;
         const portraitH = 400;
-        const gap = 4; // Gap between left/right photos
+        const gap = 4;
         const padding = 32;
-        const bottomArea = 120; // Room for "sync · CODE"
+        const bottomArea = 120;
         
-        // Width = padding + local_photo + gap + peer_photo + padding
         canvas.width = (padding * 2) + (portraitW * 2) + gap;
-        // Height = padding + 4*photos + 3*gaps + bottomArea
         canvas.height = padding + (portraitH * 4) + (gap * 3) + bottomArea;
 
-        // Draw Selected Background
         ctx.fillStyle = bgColor;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Helper to load image from base64
         const loadImage = (src: string | null): Promise<HTMLImageElement | null> => {
             if (!src) return Promise.resolve(null);
             return new Promise((resolve) => {
@@ -574,39 +617,32 @@ function PhotoBooth({ sendEvent, lastEvent, onBack, roomCode }: { sendEvent: Fun
             });
         };
 
-        // Draw all 4 frames
         for (let i = 0; i < frames.length; i++) {
             const frame = frames[i];
             const y = padding + (i * (portraitH + gap));
             
-            // Draw dark gray background slots first
             ctx.fillStyle = '#2d2d2d';
-            ctx.fillRect(padding, y, portraitW, portraitH); // Left slot
-            ctx.fillRect(padding + portraitW + gap, y, portraitW, portraitH); // Right slot
+            ctx.fillRect(padding, y, portraitW, portraitH);
+            ctx.fillRect(padding + portraitW + gap, y, portraitW, portraitH);
 
-            // Load and draw actual images
             const localImg = await loadImage(frame.local);
             const peerImg = await loadImage(frame.peer);
 
             if (localImg) ctx.drawImage(localImg, padding, y, portraitW, portraitH);
             if (peerImg) ctx.drawImage(peerImg, padding + portraitW + gap, y, portraitW, portraitH);
 
-            // Draw the "01, 02, 03, 04" Tag on the top-left of the left photo
             ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-            // draw rounded rect (approximated with simple rect for standard canvas)
             const tagX = padding + 12;
             const tagY = y + 12;
             ctx.fillRect(tagX, tagY, 44, 28);
             
-            ctx.fillStyle = '#4b5563'; // dark gray text
+            ctx.fillStyle = '#4b5563';
             ctx.font = '600 16px monospace';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(`0${i + 1}`, tagX + 22, tagY + 14);
         }
 
-        // Draw Bottom Text (❤ SYNC · CODE)
-        // Determine text color based on background (white text for dark bgs, dark text for light bgs)
         const isDarkBg = bgColor === '#000000' || bgColor === '#1f2937';
         ctx.fillStyle = isDarkBg ? '#ffffff' : '#374151'; 
         ctx.font = '600 24px monospace';
@@ -614,10 +650,8 @@ function PhotoBooth({ sendEvent, lastEvent, onBack, roomCode }: { sendEvent: Fun
         ctx.textBaseline = 'middle';
         
         const textY = canvas.height - (bottomArea / 2);
-        // Matching format: "sync · KX7RM"
         ctx.fillText(`❤ SYNC · ${roomCode}`, canvas.width / 2, textY);
 
-        // Trigger Download
         const link = document.createElement('a');
         link.download = `sync-strip-${roomCode}-${new Date().getTime()}.png`;
         link.href = canvas.toDataURL('image/png');
@@ -626,7 +660,6 @@ function PhotoBooth({ sendEvent, lastEvent, onBack, roomCode }: { sendEvent: Fun
 
     return (
         <div className="flex flex-col h-screen max-h-screen p-4 max-w-2xl mx-auto w-full bg-[#ebebeb]">
-            {/* Header */}
             <div className="flex items-center justify-between mb-4 bg-white p-3 rounded-2xl shadow-sm z-10">
                 <button onClick={onBack} className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full transition-colors">
                     <ArrowLeft className="w-5 h-5" />
@@ -637,46 +670,33 @@ function PhotoBooth({ sendEvent, lastEvent, onBack, roomCode }: { sendEvent: Fun
 
             {isFlashing && <div className="fixed inset-0 bg-white z-50 animate-pulse" />}
 
-            {/* Main Content Area */}
             <div className="flex-1 flex flex-col items-center justify-center overflow-y-auto pb-28 relative w-full">
-                
                 {hasCameraError ? (
                     <div className="p-8 text-center bg-white rounded-3xl shadow-sm">
                         <p className="text-gray-600 font-medium">Camera access is required for the photo booth.</p>
                         <p className="text-sm text-gray-400 mt-2">Please check your browser permissions.</p>
                     </div>
                 ) : (!isShooting && frames.length === 4) ? (
-                    /* FINAL STRIP VIEW */
                     <div className="flex flex-col items-center w-full max-w-sm mt-4">
-                        <div 
-                            className="p-4 pb-8 rounded-sm shadow-xl flex flex-col gap-1 w-full transition-colors duration-300 relative"
-                            style={{ backgroundColor: bgColor }}
-                        >
-                            {/* Aesthetic Pin */}
+                        <div className="p-4 pb-8 rounded-sm shadow-xl flex flex-col gap-1 w-full transition-colors duration-300 relative" style={{ backgroundColor: bgColor }}>
                             <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full bg-gray-300 shadow-md border-b border-gray-400 z-10" />
-                            
                             {frames.map((frame, i) => (
                                 <div key={i} className="flex gap-1 w-full relative">
-                                    {/* The 01 tag overlay */}
                                     <div className="absolute top-2 left-2 bg-white/90 text-gray-600 px-2 py-1 text-xs font-mono font-bold rounded-sm shadow-sm z-10">
                                         0{i + 1}
                                     </div>
-                                    {/* Local (Left) */}
                                     <div className="flex-1 aspect-[3/4] bg-gray-800 relative">
                                         {frame.local && <img src={frame.local} className="absolute inset-0 w-full h-full object-cover" />}
                                     </div>
-                                    {/* Peer (Right) */}
                                     <div className="flex-1 aspect-[3/4] bg-gray-800 relative flex items-center justify-center">
                                         {frame.peer ? (
                                             <img src={frame.peer} className="absolute inset-0 w-full h-full object-cover" />
                                         ) : (
-                                            <Loader2 className="w-5 h-5 animate-spin text-gray-500" /> // In case peer connection is slow
+                                            <Loader2 className="w-5 h-5 animate-spin text-gray-500" />
                                         )}
                                     </div>
                                 </div>
                             ))}
-                            
-                            {/* Bottom Text inside the preview */}
                             <div className="mt-4 flex items-center justify-center gap-2" style={{ color: (bgColor === '#000000' || bgColor === '#1f2937') ? '#ffffff' : '#374151' }}>
                                 <span className="font-mono font-bold tracking-widest text-sm">
                                     ❤ SYNC · {roomCode}
@@ -684,7 +704,6 @@ function PhotoBooth({ sendEvent, lastEvent, onBack, roomCode }: { sendEvent: Fun
                             </div>
                         </div>
 
-                        {/* Color Customizer */}
                         <div className="mt-6 flex flex-col items-center gap-3 bg-white px-6 py-4 rounded-3xl shadow-sm border border-gray-100">
                             <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Customize Style</span>
                             <div className="flex gap-3">
@@ -700,20 +719,11 @@ function PhotoBooth({ sendEvent, lastEvent, onBack, roomCode }: { sendEvent: Fun
                         </div>
                     </div>
                 ) : (
-                    /* LIVE CAMERA VIEW */
                     <div className="relative w-full max-w-[320px] aspect-[3/4] rounded-3xl overflow-hidden bg-gray-900 shadow-xl border-4 border-white">
-                        <video 
-                            ref={videoRef} 
-                            autoPlay 
-                            playsInline 
-                            muted 
-                            className="absolute inset-0 w-full h-full object-cover scale-x-[-1]"
-                        />
+                        <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover scale-x-[-1]" />
                         {countdown !== null && (
                             <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                                <span className="text-8xl font-black text-white drop-shadow-lg animate-bounce">
-                                    {countdown}
-                                </span>
+                                <span className="text-8xl font-black text-white drop-shadow-lg animate-bounce">{countdown}</span>
                             </div>
                         )}
                         {isShooting && (
@@ -725,7 +735,6 @@ function PhotoBooth({ sendEvent, lastEvent, onBack, roomCode }: { sendEvent: Fun
                 )}
             </div>
 
-            {/* Controls Fixed Bottom */}
             <div className="fixed bottom-6 left-0 right-0 px-6 flex justify-center gap-4 z-20">
                 {!isShooting && frames.length < 4 ? (
                     <button 
@@ -733,8 +742,7 @@ function PhotoBooth({ sendEvent, lastEvent, onBack, roomCode }: { sendEvent: Fun
                         disabled={!stream}
                         className="bg-rose-500 hover:bg-rose-600 disabled:bg-gray-300 text-white px-8 py-4 rounded-full font-bold text-lg shadow-lg flex items-center gap-3 transition-all active:scale-95"
                     >
-                        <Camera className="w-6 h-6" />
-                        Start Booth
+                        <Camera className="w-6 h-6" /> Start Booth
                     </button>
                 ) : (!isShooting && frames.length === 4) && (
                     <>
@@ -757,7 +765,6 @@ function PhotoBooth({ sendEvent, lastEvent, onBack, roomCode }: { sendEvent: Fun
     );
 }
 
-// 5. Add the complete DebateGame component at the very bottom of the file
 // --- Interactive Game Component: Debate Court ---
 function DebateGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, lastEvent: any, onBack: () => void }) {
     const [step, setStep] = useState<'SETUP' | 'DEBATING' | 'JUDGING' | 'RESULT'>('SETUP');
@@ -785,11 +792,10 @@ function DebateGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, las
         "The AI Judge finds the AGAINST argument completely undeniable. Case closed."
     ];
 
-    // Receive events from the partner
     useEffect(() => {
         if (lastEvent?.activity === 'debate-start') {
             setTopic(lastEvent.topic);
-            setMyStance(lastEvent.peerStance); // Set stance to opposite of initiator
+            setMyStance(lastEvent.peerStance);
             setStep('DEBATING');
             setTimeLeft(60);
         } else if (lastEvent?.activity === 'debate-judge') {
@@ -804,13 +810,11 @@ function DebateGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, las
         }
     }, [lastEvent]);
 
-    // Timer logic
     useEffect(() => {
         if (step === 'DEBATING' && timeLeft > 0) {
             const timer = setTimeout(() => setTimeLeft(t => t - 1), 1000);
             return () => clearTimeout(timer);
         } else if (step === 'DEBATING' && timeLeft === 0) {
-            // To avoid race conditions, only the 'FOR' player triggers the judgment phase
             if (myStance === 'FOR') {
                 handleTimeUp();
             }
@@ -827,7 +831,6 @@ function DebateGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, las
         setStep('DEBATING');
         setTimeLeft(60);
         
-        // Broadcast start
         sendEvent({ activity: 'debate-start', topic: randomTopic, peerStance });
     };
 
@@ -835,9 +838,7 @@ function DebateGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, las
         setStep('JUDGING');
         sendEvent({ activity: 'debate-judge' });
         
-        // Wait 3 seconds to simulate "AI Judging"
         setTimeout(() => {
-            // 2. Add 'as "FOR" | "AGAINST"' to strictly type the winner
             const winningStance = (Math.random() > 0.5 ? 'FOR' : 'AGAINST') as "FOR" | "AGAINST";
             const reason = verdicts[Math.floor(Math.random() * verdicts.length)];
             const result = { winner: winningStance, reason };
@@ -1131,6 +1132,220 @@ function QuizGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, lastE
                     </button>
                 </div>
             )}
+        </div>
+    );
+}
+
+// --- Interactive Game Component: Watch Together (WebRTC Video Chat + Screen Share) ---
+function WatchTogether({ sendEvent, lastEvent, onBack, isHost }: { sendEvent: Function, lastEvent: any, onBack: () => void, isHost: boolean }) {
+    const localVideoRef = useRef<HTMLVideoElement>(null);
+    const remoteVideoRef = useRef<HTMLVideoElement>(null);
+    const screenVideoRef = useRef<HTMLVideoElement>(null);
+
+    const pcRef = useRef<RTCPeerConnection | null>(null);
+    const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+    const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
+    
+    const [hasRemoteVideo, setHasRemoteVideo] = useState(false);
+    const [hasScreenShare, setHasScreenShare] = useState(false);
+    const [micEnabled, setMicEnabled] = useState(true);
+    const [camEnabled, setCamEnabled] = useState(true);
+
+    useEffect(() => {
+        const initWebRTC = async () => {
+            const pc = new RTCPeerConnection({
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+            });
+            pcRef.current = pc;
+
+            pc.ontrack = (event) => {
+                const stream = event.streams[0];
+                if (!remoteVideoRef.current?.srcObject) {
+                    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = stream;
+                    setHasRemoteVideo(true);
+                } else if (remoteVideoRef.current.srcObject !== stream) {
+                    if (screenVideoRef.current) screenVideoRef.current.srcObject = stream;
+                    setHasScreenShare(true);
+                }
+            };
+
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    sendEvent({ activity: 'webrtc-ice', candidate: event.candidate });
+                }
+            };
+
+            pc.onnegotiationneeded = async () => {
+                try {
+                    const offer = await pc.createOffer();
+                    await pc.setLocalDescription(offer);
+                    sendEvent({ activity: 'webrtc-offer', sdp: pc.localDescription });
+                } catch (err) {
+                    console.error("Negotiation error:", err);
+                }
+            };
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                setLocalStream(stream);
+                if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+                
+                stream.getTracks().forEach(track => {
+                    pc.addTrack(track, stream);
+                });
+            } catch (err) {
+                console.error("Failed to get local media", err);
+                alert("Could not access camera/microphone.");
+            }
+        };
+
+        initWebRTC();
+
+        return () => {
+            localStream?.getTracks().forEach(t => t.stop());
+            screenStream?.getTracks().forEach(t => t.stop());
+            pcRef.current?.close();
+        };
+    }, []); 
+
+    useEffect(() => {
+        const handleSignal = async () => {
+            const pc = pcRef.current;
+            if (!pc || !lastEvent) return;
+
+            try {
+                if (lastEvent.activity === 'webrtc-offer') {
+                    await pc.setRemoteDescription(new RTCSessionDescription(lastEvent.sdp));
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    sendEvent({ activity: 'webrtc-answer', sdp: pc.localDescription });
+                } 
+                else if (lastEvent.activity === 'webrtc-answer') {
+                    await pc.setRemoteDescription(new RTCSessionDescription(lastEvent.sdp));
+                } 
+                else if (lastEvent.activity === 'webrtc-ice') {
+                    await pc.addIceCandidate(new RTCIceCandidate(lastEvent.candidate));
+                }
+            } catch (err) {
+                console.error("Signaling error:", err);
+            }
+        };
+
+        handleSignal();
+    }, [lastEvent]);
+
+    const toggleScreenShare = async () => {
+        if (screenStream) {
+            screenStream.getTracks().forEach(t => t.stop());
+            setScreenStream(null);
+            setHasScreenShare(false);
+            
+            const senders = pcRef.current?.getSenders() || [];
+            senders.forEach(sender => {
+                if (sender.track?.kind === 'video' && sender.track.label.includes('screen')) {
+                    pcRef.current?.removeTrack(sender);
+                }
+            });
+            if (screenVideoRef.current) screenVideoRef.current.srcObject = null;
+        } else {
+            try {
+                const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+                setScreenStream(stream);
+                setHasScreenShare(true);
+                
+                if (screenVideoRef.current) screenVideoRef.current.srcObject = stream;
+
+                stream.getTracks().forEach(track => {
+                    pcRef.current?.addTrack(track, stream);
+                    track.onended = () => {
+                        toggleScreenShare(); 
+                    };
+                });
+            } catch (err) {
+                console.error("Screen share error", err);
+            }
+        }
+    };
+
+    const toggleMic = () => {
+        if (localStream) {
+            const audioTrack = localStream.getAudioTracks()[0];
+            if (audioTrack) {
+                audioTrack.enabled = !audioTrack.enabled;
+                setMicEnabled(audioTrack.enabled);
+            }
+        }
+    };
+
+    const toggleCam = () => {
+        if (localStream) {
+            const videoTrack = localStream.getVideoTracks()[0];
+            if (videoTrack) {
+                videoTrack.enabled = !videoTrack.enabled;
+                setCamEnabled(videoTrack.enabled);
+            }
+        }
+    };
+
+    return (
+        <div className="flex flex-col h-screen w-full bg-gray-950 text-white relative">
+            <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-50 bg-gradient-to-b from-black/60 to-transparent">
+                <button onClick={onBack} className="p-2 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full transition-colors text-white">
+                    <ArrowLeft className="w-5 h-5" />
+                </button>
+                <div className="text-center">
+                    <h2 className="font-bold text-lg tracking-wide">Watch Together</h2>
+                    <p className="text-xs text-gray-300">Live Connection</p>
+                </div>
+                <div className="w-9" />
+            </div>
+
+            <div className="flex flex-col h-full pt-16 pb-24 px-4 gap-4">
+                <div className="flex-1 bg-black rounded-3xl overflow-hidden relative shadow-2xl border border-gray-800 flex items-center justify-center">
+                    {!hasScreenShare && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-500 p-6 text-center z-0">
+                            <MonitorPlay className="w-16 h-16 mb-4 opacity-50" />
+                            <p className="font-medium text-lg text-gray-400">No screen is being shared.</p>
+                            <p className="text-sm mt-2 max-w-sm">Click the Share Screen button below to stream a movie or video to your partner.</p>
+                            <div className="mt-6 bg-yellow-500/10 border border-yellow-500/20 text-yellow-200/80 p-3 rounded-xl text-xs max-w-sm">
+                                <strong>Note:</strong> Netflix/Hulu may show a black screen due to DRM. To fix this, turn off "Hardware Acceleration" in your browser settings.
+                            </div>
+                        </div>
+                    )}
+                    <video ref={screenVideoRef} autoPlay playsInline className={`w-full h-full object-contain relative z-10 ${hasScreenShare ? 'opacity-100' : 'opacity-0'}`} />
+                </div>
+
+                <div className="h-48 md:h-56 w-full flex gap-4 shrink-0">
+                    <div className="flex-1 bg-gray-900 rounded-3xl overflow-hidden relative shadow-lg border border-gray-800">
+                        <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover scale-x-[-1]" />
+                        <div className="absolute bottom-3 left-3 bg-black/50 backdrop-blur-md px-3 py-1 rounded-full text-xs font-medium flex items-center gap-2">
+                            You {!micEnabled && <MicOff className="w-3 h-3 text-red-400" />}
+                        </div>
+                    </div>
+
+                    <div className="flex-1 bg-gray-900 rounded-3xl overflow-hidden relative shadow-lg border border-gray-800 flex items-center justify-center">
+                        {!hasRemoteVideo && <Loader2 className="w-6 h-6 animate-spin text-gray-600" />}
+                        <video ref={remoteVideoRef} autoPlay playsInline className={`w-full h-full object-cover scale-x-[-1] ${hasRemoteVideo ? 'opacity-100' : 'opacity-0'}`} />
+                        <div className="absolute bottom-3 left-3 bg-black/50 backdrop-blur-md px-3 py-1 rounded-full text-xs font-medium">
+                            Partner
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-gray-900/90 backdrop-blur-xl border border-gray-700 p-2 rounded-full shadow-2xl flex items-center gap-2">
+                <button onClick={toggleMic} className={`p-4 rounded-full transition-all ${micEnabled ? 'bg-gray-800 hover:bg-gray-700 text-white' : 'bg-red-500/20 text-red-500 hover:bg-red-500/30'}`}>
+                    {micEnabled ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
+                </button>
+                <button onClick={toggleCam} className={`p-4 rounded-full transition-all ${camEnabled ? 'bg-gray-800 hover:bg-gray-700 text-white' : 'bg-red-500/20 text-red-500 hover:bg-red-500/30'}`}>
+                    {camEnabled ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
+                </button>
+                <div className="w-px h-8 bg-gray-700 mx-1" />
+                <button onClick={toggleScreenShare} className={`px-6 py-4 rounded-full transition-all flex items-center gap-2 font-bold ${screenStream ? 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]' : 'bg-blue-600 hover:bg-blue-500 text-white'}`}>
+                    <MonitorUp className="w-5 h-5" />
+                    {screenStream ? 'Sharing...' : 'Share Screen'}
+                </button>
+            </div>
         </div>
     );
 }
