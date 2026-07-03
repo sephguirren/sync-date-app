@@ -341,7 +341,6 @@ export default function App() {
                     sendEvent={sendGameEvent} 
                     lastEvent={lastEvent} 
                     onBack={() => setView('HUB')} 
-                    isHost={!!roomCode}
                 />
             )}
             {renderLegalModal()}
@@ -1137,7 +1136,7 @@ function QuizGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, lastE
 }
 
 // --- Interactive Game Component: Watch Together (WebRTC Video Chat + Screen Share) ---
-function WatchTogether({ sendEvent, lastEvent, onBack, isHost }: { sendEvent: Function, lastEvent: any, onBack: () => void, isHost: boolean }) {
+function WatchTogether({ sendEvent, lastEvent, onBack }: { sendEvent: Function, lastEvent: any, onBack: () => void }) {
     const localVideoRef = useRef<HTMLVideoElement>(null);
     const remoteVideoRef = useRef<HTMLVideoElement>(null);
     const screenVideoRef = useRef<HTMLVideoElement>(null);
