@@ -2,6 +2,11 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+
+// Load environment variables (like your MongoDB password)
+dotenv.config();
 
 const app = express();
 app.use(cors());
@@ -9,21 +14,40 @@ app.use(cors());
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: "*", // In production, restrict this to your React app's URL
+    origin: "*", 
     methods: ["GET", "POST"]
   }
 });
 
-// Store active rooms in memory
-// Key: 5-letter code, Value: { hostSocketId, guestSocketId }
+// --- MongoDB Setup ---
+
+const MONGO_URI = process.env.MONGO_URI || "YOUR_MONGODB_CONNECTION_STRING_HERE";
+
+if (MONGO_URI) {
+    mongoose.connect(MONGO_URI)
+        .then(() => console.log("✅ Connected to MongoDB cloud database!"))
+        .catch(err => console.error("❌ MongoDB connection error:", err));
+} else {
+    console.warn("⚠️ No MONGO_URI found! Please add it to your Render Environment Variables.");
+}
+
+// Define what a "Message" looks like in the database
+const messageSchema = new mongoose.Schema({
+  roomCode: String,
+  senderId: String, // 'Host' or 'Guest'
+  text: String,
+  timestamp: { type: Date, default: Date.now }
+});
+const Message = mongoose.model('Message', messageSchema);
+
+// --- Socket.io Logic ---
 const rooms = new Map<string, { host: string, guest: string | null }>();
 
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
-  // 1. Host creates a room
+  // 1. Host creates a persistent room
   socket.on('create-room', () => {
-    // Generate a 5-character uppercase alphanumeric code
     const code = Math.random().toString(36).substring(2, 7).toUpperCase();
     rooms.set(code, { host: socket.id, guest: null });
     
@@ -32,43 +56,59 @@ io.on('connection', (socket) => {
     console.log(`Room ${code} created by ${socket.id}`);
   });
 
-  // 2. Guest joins a room via code
-  socket.on('join-room', (code: string) => {
+  // 2. Guest (or returning host) joins a room via code
+  socket.on('join-room', async (code: string) => {
     const roomCode = code.toUpperCase();
-    const room = rooms.get(roomCode);
     
+    // We allow joining even if the room isn't currently "active" in memory, 
+    // so offline chat history works!
+    socket.join(roomCode);
+    
+    // Fetch chat history for this specific room from MongoDB
+    try {
+      const history = await Message.find({ roomCode }).sort({ timestamp: 1 }).limit(50);
+      socket.emit('chat-history', history);
+    } catch (err) {
+      console.error("Error fetching history", err);
+    }
+
+    // If it's a live room, notify both that it's ready
+    const room = rooms.get(roomCode);
     if (room) {
-      if (room.guest) {
-        socket.emit('error', 'Room is already full');
-        return;
-      }
-      // Add guest to room
       room.guest = socket.id;
-      socket.join(roomCode);
-      
-      // Notify both clients that the room is ready to start
       io.to(roomCode).emit('room-ready', roomCode);
-      console.log(`User ${socket.id} joined room ${roomCode}`);
     } else {
-      socket.emit('error', 'Invalid or expired room code');
+      // If the server restarted, just let them in to see the chat
+      socket.emit('room-ready', roomCode);
+    }
+    console.log(`User ${socket.id} joined room ${roomCode}`);
+  });
+
+  // 3. Handle Chat Messages
+  socket.on('send-chat', async ({ code, senderId, text }) => {
+    try {
+      // Save message to database
+      const newMessage = new Message({ roomCode: code, senderId, text });
+      await newMessage.save();
+
+      // Broadcast to everyone in the room
+      io.to(code).emit('receive-chat', newMessage);
+    } catch (err) {
+      console.error("Error saving message", err);
     }
   });
 
-  // 3. Relay game/activity events to the peer
+  // 4. Relay game/activity events
   socket.on('game-event', ({ code, event }: { code: string, event: any }) => {
-     // Broadcast to the other person in the room (excludes the sender)
      socket.to(code).emit('game-event', event);
   });
 
-  // 4. Handle disconnections cleanly
   socket.on('disconnect', () => {
      console.log('User disconnected:', socket.id);
-     // Find if the user was in any room and clean it up
      rooms.forEach((value, key) => {
         if (value.host === socket.id || value.guest === socket.id) {
            socket.to(key).emit('peer-disconnected');
            rooms.delete(key);
-           console.log(`Room ${key} closed due to disconnect`);
         }
      });
   });
