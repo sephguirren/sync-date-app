@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-// Added Mic, MicOff, Video, and VideoOff for the Watch Together controls
-import { Heart, Pencil, Image as ImageIcon, ArrowLeft, Loader2, Camera, Download, RotateCcw, Scale, Gavel, Timer, Trophy, HelpCircle, MonitorPlay, Map, MonitorUp, Mic, MicOff, Video, VideoOff } from 'lucide-react';
+import { Heart, Pencil, Image as ImageIcon, ArrowLeft, Loader2, Camera, Download, RotateCcw, Scale, Gavel, Timer, Trophy, HelpCircle, MonitorPlay, Map, MonitorUp, Mic, MicOff, Video, VideoOff, MessageCircle, Send, X } from 'lucide-react';
 
-// Added 'WATCH_TOGETHER' to the view states
 type ViewState = 'HOME' | 'HOST_LOBBY' | 'JOIN_LOBBY' | 'HUB' | 'DRAWING' | 'PHOTO_BOOTH' | 'DEBATE' | 'QUIZ' | 'WATCH_TOGETHER';
 
 export default function App() {
@@ -14,6 +12,23 @@ export default function App() {
     const [lastEvent, setLastEvent] = useState<any>(null);
     const [errorMsg, setErrorMsg] = useState('');
     const [legalModal, setLegalModal] = useState<'NONE' | 'PRIVACY' | 'TERMS'>('NONE');
+    
+    // --- Chat State & Identity ---
+    // We create a persistent unique ID for this device to perfectly distinguish "Me" vs "Partner" in chat
+    const [myId] = useState(() => localStorage.getItem('sync_userId') || Math.random().toString(36).substring(2, 9));
+    const [isChatOpen, setIsChatOpen] = useState(false);
+    const [chatMessages, setChatMessages] = useState<any[]>([]);
+    const [unreadCount, setUnreadCount] = useState(0);
+    const isChatOpenRef = useRef(isChatOpen);
+
+    useEffect(() => {
+        localStorage.setItem('sync_userId', myId);
+    }, [myId]);
+
+    useEffect(() => {
+        isChatOpenRef.current = isChatOpen;
+        if (isChatOpen) setUnreadCount(0); // Clear unread when opening
+    }, [isChatOpen]);
     
     // --- Network Mode State ---
     const [networkMode] = useState<'demo' | 'server'>('server');
@@ -44,6 +59,9 @@ export default function App() {
                     setLastEvent(payload);
                 } else if (type === 'PEER_DISCONNECT') {
                     handleDisconnect();
+                } else if (type === 'CHAT_MESSAGE') {
+                    setChatMessages(prev => [...prev, payload]);
+                    if (!isChatOpenRef.current) setUnreadCount(prev => prev + 1);
                 }
             };
             return () => channel.close();
@@ -68,6 +86,15 @@ export default function App() {
             });
             socket.on('peer-disconnected', () => {
                 handleDisconnect();
+            });
+
+            // Chat Events (Database Powered)
+            socket.on('chat-history', (history) => {
+                setChatMessages(history);
+            });
+            socket.on('receive-chat', (msg) => {
+                setChatMessages(prev => [...prev, msg]);
+                if (!isChatOpenRef.current) setUnreadCount(prev => prev + 1);
             });
 
             return () => { socket.close(); };
@@ -108,6 +135,17 @@ export default function App() {
         }
     };
 
+    const sendChatMessage = (text: string) => {
+        const msg = { code: roomCode || joinInput, senderId: myId, text, timestamp: new Date() };
+        if (networkMode === 'demo') {
+            channelRef.current?.postMessage({ type: 'CHAT_MESSAGE', payload: msg });
+            setChatMessages(prev => [...prev, msg]); // Local update
+        } else {
+            // The server broadcasts to everyone, including us, so it will trigger 'receive-chat'
+            socketRef.current?.emit('send-chat', msg);
+        }
+    };
+
     const renderHome = () => (
         <div className="flex flex-col min-h-screen w-full max-w-md mx-auto text-center px-6">
             <div className="flex-1 flex flex-col items-center justify-center w-full py-10">
@@ -127,7 +165,6 @@ export default function App() {
                 </div>
             </div>
             
-            {/* Footer */}
             <footer className="w-full py-6 mt-auto text-center border-t border-rose-100/50">
                 <p className="text-xs text-gray-400 font-medium mb-2">
                     &copy; {new Date().getFullYear()} Mark Joseph Guirren. All rights reserved.
@@ -159,11 +196,11 @@ export default function App() {
                                 <p><strong>Last Updated:</strong> July 2026</p>
                                 <p>Welcome to Sync. Your privacy is critically important to us. This policy outlines how we handle your data.</p>
                                 <h3 className="font-bold text-gray-800 text-base mt-4">1. Data Collection</h3>
-                                <p>Sync is designed to be ephemeral. We do not store your chat logs, drawings, photos, or video streams on our servers. All visual and audio communication is handled peer-to-peer.</p>
+                                <p>Sync is designed to be ephemeral. We do not store your drawings, photos, or video streams on our servers. Text chat messages are securely encrypted and stored solely to allow offline messaging between you and your partner.</p>
                                 <h3 className="font-bold text-gray-800 text-base mt-4">2. WebRTC and Camera Access</h3>
-                                <p>To use the Watch Together and Photo Booth features, the app requests access to your camera and microphone. This stream is transmitted directly to your partner's device and is never recorded or intercepted by our servers.</p>
+                                <p>To use the Watch Together and Photo Booth features, the app requests access to your camera and microphone. This stream is transmitted directly to your partner's device via peer-to-peer connection and is never recorded or intercepted by our servers.</p>
                                 <h3 className="font-bold text-gray-800 text-base mt-4">3. Local Storage</h3>
-                                <p>Downloaded photos and game results are saved directly to your local device. We do not keep copies of your memories.</p>
+                                <p>Downloaded photos and game results are saved directly to your local device. A small anonymous identifier is stored in your browser to maintain your chat identity.</p>
                             </>
                         ) : (
                             <>
@@ -174,7 +211,7 @@ export default function App() {
                                 <h3 className="font-bold text-gray-800 text-base mt-4">2. Provided "As Is"</h3>
                                 <p>This application is provided "as is" without any warranties. We are not responsible for dropped connections, lost drawings, or interrupted movie streams.</p>
                                 <h3 className="font-bold text-gray-800 text-base mt-4">3. User Content</h3>
-                                <p>You are solely responsible for the content you stream, draw, or share over the platform. Because connections are peer-to-peer, we cannot and do not moderate user behavior.</p>
+                                <p>You are solely responsible for the content you stream, draw, or chat over the platform. Because video connections are peer-to-peer, we cannot and do not moderate user behavior.</p>
                             </>
                         )}
                     </div>
@@ -274,7 +311,6 @@ export default function App() {
                     <span className="text-[11px] text-gray-500 leading-snug">Answer secretly, then reveal to see if you match!</span>
                 </button>
 
-                {/* Watch Together */}
                 <button onClick={() => {
                     sendGameEvent({ activity: 'watch-together-request' });
                     setView('WATCH_TOGETHER');
@@ -286,7 +322,6 @@ export default function App() {
                     <span className="text-[11px] text-gray-500 leading-snug">Screen share and video chat live.</span>
                 </button>
 
-                {/* Snap Hunt (Coming Soon) */}
                 <div className="flex flex-col items-center justify-center p-6 bg-gray-50 rounded-3xl border border-gray-100 opacity-60 text-center col-span-2 sm:col-span-1">
                     <div className="w-12 h-12 bg-gray-200 rounded-2xl flex items-center justify-center mb-3">
                         <Map className="text-gray-500 w-6 h-6" />
@@ -299,7 +334,7 @@ export default function App() {
     );
 
     return (
-        <div className="min-h-screen bg-rose-50/50 font-sans selection:bg-rose-200">
+        <div className="min-h-screen bg-rose-50/50 font-sans selection:bg-rose-200 overflow-x-hidden">
             {view === 'HOME' && renderHome()}
             {view === 'HOST_LOBBY' && renderHostLobby()}
             {view === 'JOIN_LOBBY' && renderJoinLobby()}
@@ -343,8 +378,134 @@ export default function App() {
                     onBack={() => setView('HUB')} 
                 />
             )}
+
+            {/* Global Legal Modal */}
             {renderLegalModal()}
+
+            {/* Global Chat Overlay (Visible in all views except lobbies) */}
+            {(roomCode || joinInput) && view !== 'HOME' && view !== 'HOST_LOBBY' && view !== 'JOIN_LOBBY' && (
+                <>
+                    {/* Floating Chat Button */}
+                    <button
+                        onClick={() => { setIsChatOpen(true); setUnreadCount(0); }}
+                        className="fixed bottom-6 right-6 lg:right-[calc(50%-13rem)] bg-gray-900 text-white p-4 rounded-full shadow-2xl hover:scale-105 transition-transform z-40 active:scale-95 border-2 border-white/20"
+                    >
+                        <MessageCircle className="w-6 h-6" />
+                        {unreadCount > 0 && (
+                            <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[10px] font-black w-6 h-6 rounded-full flex items-center justify-center border-2 border-gray-900 shadow-sm animate-bounce">
+                                {unreadCount > 9 ? '9+' : unreadCount}
+                            </span>
+                        )}
+                    </button>
+
+                    {/* Sliding Chat Drawer */}
+                    <ChatDrawer
+                        isOpen={isChatOpen}
+                        onClose={() => setIsChatOpen(false)}
+                        messages={chatMessages}
+                        onSendMessage={sendChatMessage}
+                        myId={myId}
+                    />
+                </>
+            )}
         </div>
+    );
+}
+
+// --- Component: Sliding Chat Drawer ---
+function ChatDrawer({ isOpen, onClose, messages, onSendMessage, myId }: { isOpen: boolean, onClose: () => void, messages: any[], onSendMessage: (txt: string) => void, myId: string }) {
+    const [inputText, setInputText] = useState('');
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    // Auto-scroll to bottom when new messages arrive
+    useEffect(() => {
+        if (isOpen) {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [messages, isOpen]);
+
+    const handleSend = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!inputText.trim()) return;
+        onSendMessage(inputText.trim());
+        setInputText('');
+    };
+
+    return (
+        <>
+            {/* Dark Backdrop */}
+            <div 
+                className={`fixed inset-0 bg-black/20 backdrop-blur-sm z-50 transition-opacity duration-300 ${isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`} 
+                onClick={onClose}
+            />
+            
+            {/* Sliding Panel */}
+            <div className={`fixed right-0 top-0 bottom-0 w-full sm:w-[400px] bg-rose-50/95 backdrop-blur-xl shadow-2xl z-50 flex flex-col border-l border-white/40 transform transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+                
+                {/* Header */}
+                <div className="bg-white/80 backdrop-blur-md p-4 flex items-center justify-between border-b border-rose-100 shadow-sm z-10 shrink-0">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-rose-100 rounded-full flex items-center justify-center">
+                            <Heart className="w-5 h-5 text-rose-500 fill-rose-500" />
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-gray-900 leading-tight">Couple's Chat</h3>
+                            <p className="text-xs text-emerald-500 font-medium flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> Connected
+                            </p>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="p-2 bg-gray-50 hover:bg-gray-100 text-gray-500 rounded-full transition-colors active:scale-95">
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+
+                {/* Messages List Area */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                    {messages.length === 0 ? (
+                        <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-3 opacity-60">
+                            <MessageCircle className="w-12 h-12" />
+                            <p className="text-sm font-medium">No messages yet. Say hi! 👋</p>
+                        </div>
+                    ) : (
+                        messages.map((msg, idx) => {
+                            const isMe = msg.senderId === myId;
+                            const time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+                            
+                            return (
+                                <div key={idx} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                                    <div className={`px-4 py-3 max-w-[85%] ${isMe ? 'bg-rose-500 text-white rounded-2xl rounded-tr-sm shadow-md shadow-rose-200' : 'bg-white text-gray-800 rounded-2xl rounded-tl-sm shadow-sm border border-rose-50'}`}>
+                                        <p className="text-[15px] leading-relaxed break-words">{msg.text}</p>
+                                    </div>
+                                    {time && <span className="text-[10px] text-gray-400 mt-1 px-1 font-medium">{time}</span>}
+                                </div>
+                            );
+                        })
+                    )}
+                    <div ref={messagesEndRef} />
+                </div>
+
+                {/* Text Input Footer */}
+                <div className="p-4 bg-white/80 backdrop-blur-md border-t border-rose-100 shrink-0">
+                    <form onSubmit={handleSend} className="relative flex items-center">
+                        <input
+                            type="text"
+                            value={inputText}
+                            onChange={e => setInputText(e.target.value)}
+                            placeholder="Type a message..."
+                            className="w-full bg-gray-50 border border-gray-200 text-gray-800 rounded-full pl-5 pr-14 py-3.5 focus:outline-none focus:border-rose-400 focus:ring-4 focus:ring-rose-100 transition-all text-[15px]"
+                        />
+                        <button 
+                            type="submit"
+                            disabled={!inputText.trim()}
+                            className="absolute right-2 bg-rose-500 disabled:bg-rose-300 text-white w-10 h-10 rounded-full flex items-center justify-center shadow-md transition-transform active:scale-90 disabled:shadow-none"
+                        >
+                            <Send className="w-4 h-4 ml-0.5" />
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </>
     );
 }
 
@@ -434,7 +595,7 @@ function DrawingGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, la
     const colors = ['#E11D48', '#3B82F6', '#10B981', '#F59E0B', '#8B5CF6', '#111827'];
 
     return (
-        <div className="flex flex-col h-screen max-h-screen p-4 max-w-2xl mx-auto w-full bg-rose-50/30">
+        <div className="flex flex-col h-[100dvh] max-h-[100dvh] p-4 max-w-2xl mx-auto w-full bg-rose-50/30">
             <div className="flex items-center justify-between mb-4 bg-white p-3 rounded-2xl shadow-sm">
                 <button onClick={onBack} className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full transition-colors">
                     <ArrowLeft className="w-5 h-5" />
@@ -658,7 +819,7 @@ function PhotoBooth({ sendEvent, lastEvent, onBack, roomCode }: { sendEvent: Fun
     };
 
     return (
-        <div className="flex flex-col h-screen max-h-screen p-4 max-w-2xl mx-auto w-full bg-[#ebebeb]">
+        <div className="flex flex-col h-[100dvh] max-h-[100dvh] p-4 max-w-2xl mx-auto w-full bg-[#ebebeb]">
             <div className="flex items-center justify-between mb-4 bg-white p-3 rounded-2xl shadow-sm z-10">
                 <button onClick={onBack} className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full transition-colors">
                     <ArrowLeft className="w-5 h-5" />
@@ -856,7 +1017,7 @@ function DebateGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, las
     };
 
     return (
-        <div className="flex flex-col h-screen max-h-screen p-4 max-w-2xl mx-auto w-full bg-rose-50/30">
+        <div className="flex flex-col h-[100dvh] max-h-[100dvh] p-4 max-w-2xl mx-auto w-full bg-rose-50/30">
             <div className="flex items-center justify-between mb-4 bg-white p-3 rounded-2xl shadow-sm shrink-0">
                 <button onClick={onBack} className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full transition-colors">
                     <ArrowLeft className="w-5 h-5" />
@@ -1036,7 +1197,7 @@ function QuizGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, lastE
     };
 
     return (
-        <div className="flex flex-col h-screen max-h-screen p-4 max-w-2xl mx-auto w-full bg-rose-50/30">
+        <div className="flex flex-col h-[100dvh] max-h-[100dvh] p-4 max-w-2xl mx-auto w-full bg-rose-50/30">
             <div className="flex items-center justify-between mb-4 bg-white p-3 rounded-2xl shadow-sm shrink-0">
                 <button onClick={onBack} className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-full transition-colors">
                     <ArrowLeft className="w-5 h-5" />
@@ -1287,7 +1448,7 @@ function WatchTogether({ sendEvent, lastEvent, onBack }: { sendEvent: Function, 
     };
 
     return (
-        <div className="flex flex-col h-screen w-full bg-gray-950 text-white relative">
+        <div className="flex flex-col h-[100dvh] w-full bg-gray-950 text-white relative">
             <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-50 bg-gradient-to-b from-black/60 to-transparent">
                 <button onClick={onBack} className="p-2 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full transition-colors text-white">
                     <ArrowLeft className="w-5 h-5" />
@@ -1340,7 +1501,7 @@ function WatchTogether({ sendEvent, lastEvent, onBack }: { sendEvent: Function, 
                     {camEnabled ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
                 </button>
                 <div className="w-px h-8 bg-gray-700 mx-1" />
-                <button onClick={toggleScreenShare} className={`px-6 py-4 rounded-full transition-all flex items-center gap-2 font-bold ${screenStream ? 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]' : 'bg-blue-600 hover:bg-blue-500 text-white'}`}>
+                <button onClick={toggleScreenShare} className={`px-6 py-4 rounded-full transition-all flex items-center gap-2 font-bold ${screenStream ? 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]' : 'bg-rose-500 hover:bg-rose-600 text-white'}`}>
                     <MonitorUp className="w-5 h-5" />
                     {screenStream ? 'Sharing...' : 'Share Screen'}
                 </button>
