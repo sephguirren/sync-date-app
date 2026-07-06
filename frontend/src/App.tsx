@@ -16,6 +16,7 @@ export default function App() {
     // --- Chat State & Identity ---
     // We create a persistent unique ID for this device to perfectly distinguish "Me" vs "Partner" in chat
     const [myId] = useState(() => localStorage.getItem('sync_userId') || Math.random().toString(36).substring(2, 9));
+    const [lastRoomCode, setLastRoomCode] = useState(() => localStorage.getItem('sync_roomCode') || '');
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [chatMessages, setChatMessages] = useState<any[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
@@ -101,6 +102,15 @@ export default function App() {
         }
     }, [networkMode]);
 
+    // Save the room code to memory whenever we successfully enter the Hub
+    useEffect(() => {
+        const activeCode = roomCode || joinInput;
+        if (activeCode && view === 'HUB') {
+            localStorage.setItem('sync_roomCode', activeCode);
+            setLastRoomCode(activeCode);
+        }
+    }, [view, roomCode, joinInput]);
+
     const handleDisconnect = () => {
         alert("Your partner disconnected.");
         setView('HOME');
@@ -156,6 +166,21 @@ export default function App() {
                 <p className="text-gray-500 mb-10 text-lg">Fun dates & activities for long distance relationships.</p>
 
                 <div className="w-full space-y-4">
+                    {lastRoomCode && (
+                        <button 
+                            onClick={() => {
+                                setJoinInput(lastRoomCode);
+                                if (networkMode === 'demo') {
+                                    channelRef.current?.postMessage({ type: 'JOIN_REQUEST', payload: { code: lastRoomCode } });
+                                } else {
+                                    socketRef.current?.emit('join-room', lastRoomCode);
+                                }
+                            }} 
+                            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl py-4 font-bold text-lg transition-all active:scale-[0.98] shadow-lg shadow-emerald-200"
+                        >
+                            Reconnect to {lastRoomCode}
+                        </button>
+                    )}
                     <button onClick={createRoom} className="w-full bg-rose-500 hover:bg-rose-600 text-white rounded-2xl py-4 font-bold text-lg transition-all active:scale-[0.98] shadow-lg shadow-rose-200">
                         Create a Date
                     </button>
