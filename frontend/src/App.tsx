@@ -12,8 +12,8 @@ export default function App() {
     const [lastEvent, setLastEvent] = useState<any>(null);
     const [errorMsg, setErrorMsg] = useState('');
     const [legalModal, setLegalModal] = useState<'NONE' | 'PRIVACY' | 'TERMS'>('NONE');
+    const [partnerConnected, setPartnerConnected] = useState(false);
     
-    // --- Chat State & Identity ---
     // We create a persistent unique ID for this device to perfectly distinguish "Me" vs "Partner" in chat
     const [myId] = useState(() => localStorage.getItem('sync_userId') || Math.random().toString(36).substring(2, 9));
     const [lastRoomCode, setLastRoomCode] = useState(() => localStorage.getItem('sync_roomCode') || '');
@@ -31,7 +31,6 @@ export default function App() {
         if (isChatOpen) setUnreadCount(0); // Clear unread when opening
     }, [isChatOpen]);
     
-    // --- Network Mode State ---
     const [networkMode] = useState<'demo' | 'server'>('server');
     const channelRef = useRef<BroadcastChannel | null>(null);
     const socketRef = useRef<Socket | null>(null);
@@ -41,7 +40,6 @@ export default function App() {
         stateRef.current = { view, roomCode, joinInput };
     }, [view, roomCode, joinInput]);
 
-    // --- Network Initialization ---
     useEffect(() => {
         if (networkMode === 'demo') {
             const channel = new BroadcastChannel('sync-app-demo');
@@ -53,13 +51,15 @@ export default function App() {
 
                 if (type === 'JOIN_REQUEST' && state.view === 'HOST_LOBBY' && payload.code === state.roomCode) {
                     channel.postMessage({ type: 'ROOM_READY', payload: { code: state.roomCode } });
+                    setPartnerConnected(true);
                     setView('HUB');
                 } else if (type === 'ROOM_READY' && state.view === 'JOIN_LOBBY' && payload.code === state.joinInput) {
+                    setPartnerConnected(true);
                     setView('HUB');
                 } else if (type === 'GAME_EVENT') {
                     setLastEvent(payload);
                 } else if (type === 'PEER_DISCONNECT') {
-                    handleDisconnect();
+                    setPartnerConnected(false);
                 } else if (type === 'CHAT_MESSAGE') {
                     setChatMessages(prev => [...prev, payload]);
                     if (!isChatOpenRef.current) setUnreadCount(prev => prev + 1);
@@ -76,6 +76,7 @@ export default function App() {
                 setView('HOST_LOBBY');
             });
             socket.on('room-ready', () => {
+                setPartnerConnected(true);
                 setView('HUB');
             });
             socket.on('game-event', (event) => {
@@ -86,7 +87,7 @@ export default function App() {
                 setTimeout(() => setErrorMsg(''), 3000);
             });
             socket.on('peer-disconnected', () => {
-                handleDisconnect();
+                setPartnerConnected(false);
             });
 
             // Chat Events (Database Powered)
@@ -111,12 +112,21 @@ export default function App() {
         }
     }, [view, roomCode, joinInput]);
 
-    const handleDisconnect = () => {
-        alert("Your partner disconnected.");
-        setView('HOME');
-        setRoomCode('');
-        setJoinInput('');
-    };
+    // Ping/Pong to sync online status when someone reconnects
+    useEffect(() => {
+        if (view === 'HUB') {
+            setTimeout(() => sendGameEvent({ activity: 'ping' }), 500);
+        }
+    }, [view]);
+
+    useEffect(() => {
+        if (lastEvent?.activity === 'ping') {
+            setPartnerConnected(true);
+            sendGameEvent({ activity: 'pong' });
+        } else if (lastEvent?.activity === 'pong') {
+            setPartnerConnected(true);
+        }
+    }, [lastEvent]);
 
     const createRoom = () => {
         if (networkMode === 'demo') {
@@ -157,29 +167,41 @@ export default function App() {
     };
 
     const renderHome = () => (
-        <div className="flex flex-col min-h-screen w-full max-w-md mx-auto text-center px-6">
+        <div className="flex flex-col min-h-screen w-full max-w-md mx-auto px-6">
             <div className="flex-1 flex flex-col items-center justify-center w-full py-10">
                 <div className="w-20 h-20 bg-rose-100 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-sm rotate-3">
                     <Heart className="text-rose-500 w-10 h-10 fill-rose-500 animate-pulse" />
                 </div>
-                <h1 className="text-4xl font-extrabold text-gray-900 mb-3 tracking-tight">Sync</h1>
-                <p className="text-gray-500 mb-10 text-lg">Fun dates & activities for long distance relationships.</p>
+                <h1 className="text-4xl font-extrabold text-gray-900 mb-3 tracking-tight text-center">Sync</h1>
+                <p className="text-gray-500 mb-10 text-lg text-center">Fun dates & activities for long distance relationships.</p>
 
                 <div className="w-full space-y-4">
                     {lastRoomCode && (
-                        <button 
-                            onClick={() => {
-                                setJoinInput(lastRoomCode);
-                                if (networkMode === 'demo') {
-                                    channelRef.current?.postMessage({ type: 'JOIN_REQUEST', payload: { code: lastRoomCode } });
-                                } else {
-                                    socketRef.current?.emit('join-room', lastRoomCode);
-                                }
-                            }} 
-                            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl py-4 font-bold text-lg transition-all active:scale-[0.98] shadow-lg shadow-emerald-200"
-                        >
-                            Reconnect to {lastRoomCode}
-                        </button>
+                        <div className="flex gap-2 w-full">
+                            <button 
+                                onClick={() => {
+                                    setJoinInput(lastRoomCode);
+                                    if (networkMode === 'demo') {
+                                        channelRef.current?.postMessage({ type: 'JOIN_REQUEST', payload: { code: lastRoomCode } });
+                                    } else {
+                                        socketRef.current?.emit('join-room', lastRoomCode);
+                                    }
+                                }} 
+                                className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl py-4 font-bold text-lg transition-all active:scale-[0.98] shadow-lg shadow-emerald-200"
+                            >
+                                Reconnect to {lastRoomCode}
+                            </button>
+                            <button 
+                                onClick={() => {
+                                    localStorage.removeItem('sync_roomCode');
+                                    setLastRoomCode('');
+                                }}
+                                className="w-16 bg-white border-2 border-gray-100 hover:bg-red-50 text-gray-400 hover:text-red-500 hover:border-red-100 rounded-2xl flex items-center justify-center transition-all active:scale-[0.98] shadow-sm"
+                                title="Forget Room"
+                            >
+                                <X className="w-6 h-6" />
+                            </button>
+                        </div>
                     )}
                     <button onClick={createRoom} className="w-full bg-rose-500 hover:bg-rose-600 text-white rounded-2xl py-4 font-bold text-lg transition-all active:scale-[0.98] shadow-lg shadow-rose-200">
                         Create a Date
@@ -297,9 +319,9 @@ export default function App() {
                     <h2 className="text-xl font-bold text-gray-900">Activities Hub</h2>
                     <p className="text-sm text-gray-500">Room: <span className="font-mono font-bold text-rose-500">{roomCode || joinInput}</span></p>
                 </div>
-                <span className="px-3 py-1.5 bg-emerald-50 text-emerald-600 text-xs font-bold rounded-full flex items-center gap-2 border border-emerald-100">
-                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    Connected
+                <span className={`px-3 py-1.5 text-xs font-bold rounded-full flex items-center gap-2 border ${partnerConnected ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-gray-50 text-gray-500 border-gray-200'}`}>
+                    <div className={`w-2 h-2 rounded-full ${partnerConnected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'}`} />
+                    {partnerConnected ? 'Connected' : 'Offline'}
                 </span>
             </div>
 
@@ -430,6 +452,7 @@ export default function App() {
                         messages={chatMessages}
                         onSendMessage={sendChatMessage}
                         myId={myId}
+                        partnerConnected={partnerConnected}
                     />
                 </>
             )}
@@ -438,7 +461,7 @@ export default function App() {
 }
 
 // --- Component: Sliding Chat Drawer ---
-function ChatDrawer({ isOpen, onClose, messages, onSendMessage, myId }: { isOpen: boolean, onClose: () => void, messages: any[], onSendMessage: (txt: string) => void, myId: string }) {
+function ChatDrawer({ isOpen, onClose, messages, onSendMessage, myId, partnerConnected }: { isOpen: boolean, onClose: () => void, messages: any[], onSendMessage: (txt: string) => void, myId: string, partnerConnected: boolean }) {
     const [inputText, setInputText] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -475,8 +498,9 @@ function ChatDrawer({ isOpen, onClose, messages, onSendMessage, myId }: { isOpen
                         </div>
                         <div>
                             <h3 className="font-bold text-gray-900 leading-tight">Couple's Chat</h3>
-                            <p className="text-xs text-emerald-500 font-medium flex items-center gap-1">
-                                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> Connected
+                            <p className={`text-xs font-medium flex items-center gap-1 ${partnerConnected ? 'text-emerald-500' : 'text-gray-400'}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${partnerConnected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'}`} /> 
+                                {partnerConnected ? 'Connected' : 'Offline'}
                             </p>
                         </div>
                     </div>
