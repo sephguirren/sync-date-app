@@ -14,9 +14,11 @@ export default function App() {
     const [legalModal, setLegalModal] = useState<'NONE' | 'PRIVACY' | 'TERMS'>('NONE');
     const [partnerConnected, setPartnerConnected] = useState(false);
     
-    // We create a persistent unique ID for this device to perfectly distinguish "Me" vs "Partner" in chat
+    // Persistent IDs & Room Memory
     const [myId] = useState(() => localStorage.getItem('sync_userId') || Math.random().toString(36).substring(2, 9));
     const [lastRoomCode, setLastRoomCode] = useState(() => localStorage.getItem('sync_roomCode') || '');
+    
+    // Chat State
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [chatMessages, setChatMessages] = useState<any[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
@@ -28,7 +30,7 @@ export default function App() {
 
     useEffect(() => {
         isChatOpenRef.current = isChatOpen;
-        if (isChatOpen) setUnreadCount(0); // Clear unread when opening
+        if (isChatOpen) setUnreadCount(0);
     }, [isChatOpen]);
     
     const [networkMode] = useState<'demo' | 'server'>('server');
@@ -57,7 +59,11 @@ export default function App() {
                     setPartnerConnected(true);
                     setView('HUB');
                 } else if (type === 'GAME_EVENT') {
-                    setLastEvent(payload);
+                    if (payload?.activity === 'sync-screen') {
+                        setView(payload.screen);
+                    } else {
+                        setLastEvent(payload);
+                    }
                 } else if (type === 'PEER_DISCONNECT') {
                     setPartnerConnected(false);
                 } else if (type === 'CHAT_MESSAGE') {
@@ -67,7 +73,7 @@ export default function App() {
             };
             return () => channel.close();
         } else {
-            // Replace with your actual Render URL
+            // Your Render URL
             const socket = io('https://sync-backend-63p7.onrender.com');
             socketRef.current = socket;
 
@@ -80,6 +86,18 @@ export default function App() {
                 setView('HUB');
             });
             socket.on('game-event', (event) => {
+                // Bypass React state batching for high-frequency WebRTC signals to prevent drops
+                if (event.activity && event.activity.startsWith('webrtc')) {
+                    window.dispatchEvent(new CustomEvent('sync-game-event', { detail: event }));
+                    return;
+                }
+                
+                // Auto-Sync Screens
+                if (event.activity === 'sync-screen') {
+                    setView(event.screen);
+                    return;
+                }
+
                 setLastEvent(event);
             });
             socket.on('error', (msg) => {
@@ -155,13 +173,17 @@ export default function App() {
         }
     };
 
+    const handleSyncScreen = (screen: ViewState) => {
+        sendGameEvent({ activity: 'sync-screen', screen });
+        setView(screen);
+    };
+
     const sendChatMessage = (text: string) => {
         const msg = { code: roomCode || joinInput, senderId: myId, text, timestamp: new Date() };
         if (networkMode === 'demo') {
             channelRef.current?.postMessage({ type: 'CHAT_MESSAGE', payload: msg });
-            setChatMessages(prev => [...prev, msg]); // Local update
+            setChatMessages(prev => [...prev, msg]); 
         } else {
-            // The server broadcasts to everyone, including us, so it will trigger 'receive-chat'
             socketRef.current?.emit('send-chat', msg);
         }
     };
@@ -214,7 +236,7 @@ export default function App() {
             
             <footer className="w-full py-6 mt-auto text-center border-t border-rose-100/50">
                 <p className="text-xs text-gray-400 font-medium mb-2">
-                    &copy; {new Date().getFullYear()} Mark Joseph Guirren. All rights reserved.
+                    &copy; 2026 Mark Joseph Guirren. All rights reserved.
                 </p>
                 <div className="flex justify-center items-center gap-4 text-xs text-rose-500/70">
                     <button onClick={() => setLegalModal('PRIVACY')} className="hover:text-rose-600 transition-colors">Privacy Policy</button>
@@ -326,7 +348,7 @@ export default function App() {
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-                <button onClick={() => setView('DRAWING')} className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl shadow-sm hover:shadow-md transition-all border border-transparent hover:border-rose-100 group relative overflow-hidden text-center">
+                <button onClick={() => handleSyncScreen('DRAWING')} className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl shadow-sm hover:shadow-md transition-all border border-transparent hover:border-rose-100 group relative overflow-hidden text-center">
                     <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shrink-0">
                         <Pencil className="text-rose-500 w-6 h-6" />
                     </div>
@@ -334,7 +356,7 @@ export default function App() {
                     <span className="text-[11px] text-gray-500 leading-snug">Share a live canvas and doodle together.</span>
                 </button>
 
-                <button onClick={() => setView('PHOTO_BOOTH')} className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl shadow-sm hover:shadow-md transition-all border border-transparent hover:border-rose-100 group relative overflow-hidden text-center">
+                <button onClick={() => handleSyncScreen('PHOTO_BOOTH')} className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl shadow-sm hover:shadow-md transition-all border border-transparent hover:border-rose-100 group relative overflow-hidden text-center">
                     <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shrink-0">
                         <ImageIcon className="text-rose-500 w-6 h-6" />
                     </div>
@@ -342,7 +364,7 @@ export default function App() {
                     <span className="text-[11px] text-gray-500 leading-snug">Pose and snap 4 synced photos together.</span>
                 </button>
 
-                <button onClick={() => setView('DEBATE')} className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl shadow-sm hover:shadow-md transition-all border border-transparent hover:border-rose-100 group relative overflow-hidden text-center">
+                <button onClick={() => handleSyncScreen('DEBATE')} className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl shadow-sm hover:shadow-md transition-all border border-transparent hover:border-rose-100 group relative overflow-hidden text-center">
                     <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shrink-0">
                         <Scale className="text-rose-500 w-6 h-6" />
                     </div>
@@ -350,7 +372,7 @@ export default function App() {
                     <span className="text-[11px] text-gray-500 leading-snug">Argue a topic. Let an AI judge decide who wins.</span>
                 </button>
 
-                <button onClick={() => setView('QUIZ')} className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl shadow-sm hover:shadow-md transition-all border border-transparent hover:border-rose-100 group relative overflow-hidden text-center">
+                <button onClick={() => handleSyncScreen('QUIZ')} className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl shadow-sm hover:shadow-md transition-all border border-transparent hover:border-rose-100 group relative overflow-hidden text-center">
                     <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shrink-0">
                         <HelpCircle className="text-rose-500 w-6 h-6" />
                     </div>
@@ -358,10 +380,7 @@ export default function App() {
                     <span className="text-[11px] text-gray-500 leading-snug">Answer secretly, then reveal to see if you match!</span>
                 </button>
 
-                <button onClick={() => {
-                    sendGameEvent({ activity: 'watch-together-request' });
-                    setView('WATCH_TOGETHER');
-                }} className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl shadow-sm hover:shadow-md transition-all border border-transparent hover:border-rose-100 group relative overflow-hidden text-center col-span-2 sm:col-span-1">
+                <button onClick={() => handleSyncScreen('WATCH_TOGETHER')} className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl shadow-sm hover:shadow-md transition-all border border-transparent hover:border-rose-100 group relative overflow-hidden text-center col-span-2 sm:col-span-1">
                     <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shrink-0">
                         <MonitorPlay className="text-rose-500 w-6 h-6" />
                     </div>
@@ -390,17 +409,14 @@ export default function App() {
                 <DrawingGame 
                     sendEvent={sendGameEvent} 
                     lastEvent={lastEvent} 
-                    onBack={() => {
-                        sendGameEvent({ activity: 'left-drawing' });
-                        setView('HUB');
-                    }} 
+                    onBack={() => handleSyncScreen('HUB')} 
                 />
             )}
             {view === 'PHOTO_BOOTH' && (
                 <PhotoBooth 
                     sendEvent={sendGameEvent} 
                     lastEvent={lastEvent} 
-                    onBack={() => setView('HUB')} 
+                    onBack={() => handleSyncScreen('HUB')} 
                     roomCode={roomCode || joinInput}
                 />
             )}
@@ -408,31 +424,30 @@ export default function App() {
                 <DebateGame 
                     sendEvent={sendGameEvent} 
                     lastEvent={lastEvent} 
-                    onBack={() => setView('HUB')} 
+                    onBack={() => handleSyncScreen('HUB')} 
                 />
             )}
             {view === 'QUIZ' && (
                 <QuizGame 
                     sendEvent={sendGameEvent} 
                     lastEvent={lastEvent} 
-                    onBack={() => setView('HUB')} 
+                    onBack={() => handleSyncScreen('HUB')} 
                 />
             )}
             {view === 'WATCH_TOGETHER' && (
                 <WatchTogether 
                     sendEvent={sendGameEvent} 
-                    lastEvent={lastEvent} 
-                    onBack={() => setView('HUB')} 
+                    onBack={() => handleSyncScreen('HUB')} 
+                    myId={myId}
                 />
             )}
 
             {/* Global Legal Modal */}
             {renderLegalModal()}
 
-            {/* Global Chat Overlay (Visible in all views except lobbies) */}
+            {/* Global Chat Overlay */}
             {(roomCode || joinInput) && view !== 'HOME' && view !== 'HOST_LOBBY' && view !== 'JOIN_LOBBY' && (
                 <>
-                    {/* Floating Chat Button */}
                     <button
                         onClick={() => { setIsChatOpen(true); setUnreadCount(0); }}
                         className="fixed bottom-6 right-6 lg:right-[calc(50%-13rem)] bg-gray-900 text-white p-4 rounded-full shadow-2xl hover:scale-105 transition-transform z-40 active:scale-95 border-2 border-white/20"
@@ -445,7 +460,6 @@ export default function App() {
                         )}
                     </button>
 
-                    {/* Sliding Chat Drawer */}
                     <ChatDrawer
                         isOpen={isChatOpen}
                         onClose={() => setIsChatOpen(false)}
@@ -460,12 +474,10 @@ export default function App() {
     );
 }
 
-// --- Component: Sliding Chat Drawer ---
 function ChatDrawer({ isOpen, onClose, messages, onSendMessage, myId, partnerConnected }: { isOpen: boolean, onClose: () => void, messages: any[], onSendMessage: (txt: string) => void, myId: string, partnerConnected: boolean }) {
     const [inputText, setInputText] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    // Auto-scroll to bottom when new messages arrive
     useEffect(() => {
         if (isOpen) {
             messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -481,16 +493,13 @@ function ChatDrawer({ isOpen, onClose, messages, onSendMessage, myId, partnerCon
 
     return (
         <>
-            {/* Dark Backdrop */}
             <div 
                 className={`fixed inset-0 bg-black/20 backdrop-blur-sm z-50 transition-opacity duration-300 ${isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`} 
                 onClick={onClose}
             />
             
-            {/* Sliding Panel */}
             <div className={`fixed right-0 top-0 bottom-0 w-full sm:w-[400px] bg-rose-50/95 backdrop-blur-xl shadow-2xl z-50 flex flex-col border-l border-white/40 transform transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
                 
-                {/* Header */}
                 <div className="bg-white/80 backdrop-blur-md p-4 flex items-center justify-between border-b border-rose-100 shadow-sm z-10 shrink-0">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-rose-100 rounded-full flex items-center justify-center">
@@ -509,7 +518,6 @@ function ChatDrawer({ isOpen, onClose, messages, onSendMessage, myId, partnerCon
                     </button>
                 </div>
 
-                {/* Messages List Area */}
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
                     {messages.length === 0 ? (
                         <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-3 opacity-60">
@@ -534,7 +542,6 @@ function ChatDrawer({ isOpen, onClose, messages, onSendMessage, myId, partnerCon
                     <div ref={messagesEndRef} />
                 </div>
 
-                {/* Text Input Footer */}
                 <div className="p-4 bg-white/80 backdrop-blur-md border-t border-rose-100 shrink-0">
                     <form onSubmit={handleSend} className="relative flex items-center">
                         <input
@@ -558,13 +565,12 @@ function ChatDrawer({ isOpen, onClose, messages, onSendMessage, myId, partnerCon
     );
 }
 
-// --- Interactive Game Component: Draw Together ---
 function DrawingGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, lastEvent: any, onBack: () => void }) {
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [lastPos, setLastPos] = useState({ x: 0, y: 0 });
-    const [color, setColor] = useState('#E11D48'); // rose-600
+    const [color, setColor] = useState('#E11D48'); 
 
     useEffect(() => {
         const resizeCanvas = () => {
@@ -684,7 +690,6 @@ function DrawingGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, la
     );
 }
 
-// --- Interactive Game Component: Split Screen Photo Booth ---
 type PhotoFrame = { local: string | null; peer: string | null };
 
 function PhotoBooth({ sendEvent, lastEvent, onBack, roomCode }: { sendEvent: Function, lastEvent: any, onBack: () => void, roomCode: string }) {
@@ -974,7 +979,6 @@ function PhotoBooth({ sendEvent, lastEvent, onBack, roomCode }: { sendEvent: Fun
     );
 }
 
-// --- Interactive Game Component: Debate Court ---
 function DebateGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, lastEvent: any, onBack: () => void }) {
     const [step, setStep] = useState<'SETUP' | 'DEBATING' | 'JUDGING' | 'RESULT'>('SETUP');
     const [topic, setTopic] = useState('');
@@ -1151,7 +1155,6 @@ function DebateGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, las
     );
 }
 
-// --- Interactive Game Component: Couple's Quiz ---
 function QuizGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, lastEvent: any, onBack: () => void }) {
     const [step, setStep] = useState<'SETUP' | 'ANSWERING' | 'REVEAL' | 'END'>('SETUP');
     const [questions, setQuestions] = useState<string[]>([]);
@@ -1345,8 +1348,7 @@ function QuizGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, lastE
     );
 }
 
-// --- Interactive Game Component: Watch Together (WebRTC Video Chat + Screen Share) ---
-function WatchTogether({ sendEvent, lastEvent, onBack }: { sendEvent: Function, lastEvent: any, onBack: () => void }) {
+function WatchTogether({ sendEvent, onBack, myId }: { sendEvent: Function, onBack: () => void, myId: string }) {
     const localVideoRef = useRef<HTMLVideoElement>(null);
     const remoteVideoRef = useRef<HTMLVideoElement>(null);
     const screenVideoRef = useRef<HTMLVideoElement>(null);
@@ -1354,94 +1356,110 @@ function WatchTogether({ sendEvent, lastEvent, onBack }: { sendEvent: Function, 
     const pcRef = useRef<RTCPeerConnection | null>(null);
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
     const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
+    const screenSendersRef = useRef<RTCRtpSender[]>([]);
     
     const [hasRemoteVideo, setHasRemoteVideo] = useState(false);
     const [hasScreenShare, setHasScreenShare] = useState(false);
     const [micEnabled, setMicEnabled] = useState(true);
     const [camEnabled, setCamEnabled] = useState(true);
 
+    const makingOfferRef = useRef(false);
+    const ignoreOfferRef = useRef(false);
+
     useEffect(() => {
-        const initWebRTC = async () => {
-            const pc = new RTCPeerConnection({
-                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-            });
-            pcRef.current = pc;
+        const pc = new RTCPeerConnection({
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        });
+        pcRef.current = pc;
 
-            pc.ontrack = (event) => {
-                const stream = event.streams[0];
-                if (!remoteVideoRef.current?.srcObject) {
-                    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = stream;
-                    setHasRemoteVideo(true);
-                } else if (remoteVideoRef.current.srcObject !== stream) {
-                    if (screenVideoRef.current) screenVideoRef.current.srcObject = stream;
-                    setHasScreenShare(true);
-                }
-            };
-
-            pc.onicecandidate = (event) => {
-                if (event.candidate) {
-                    sendEvent({ activity: 'webrtc-ice', candidate: event.candidate });
-                }
-            };
-
-            pc.onnegotiationneeded = async () => {
-                try {
-                    const offer = await pc.createOffer();
-                    await pc.setLocalDescription(offer);
-                    sendEvent({ activity: 'webrtc-offer', sdp: pc.localDescription });
-                } catch (err) {
-                    console.error("Negotiation error:", err);
-                }
-            };
-
+        pc.onnegotiationneeded = async () => {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                setLocalStream(stream);
-                if (localVideoRef.current) localVideoRef.current.srcObject = stream;
-                
-                stream.getTracks().forEach(track => {
-                    pc.addTrack(track, stream);
-                });
+                makingOfferRef.current = true;
+                await pc.setLocalDescription();
+                sendEvent({ activity: 'webrtc-offer', sdp: pc.localDescription, senderId: myId });
             } catch (err) {
-                console.error("Failed to get local media", err);
-                alert("Could not access camera/microphone.");
+                console.error("Negotiation error:", err);
+            } finally {
+                makingOfferRef.current = false;
             }
         };
 
-        initWebRTC();
-
-        return () => {
-            localStream?.getTracks().forEach(t => t.stop());
-            screenStream?.getTracks().forEach(t => t.stop());
-            pcRef.current?.close();
+        pc.onicecandidate = (event) => {
+            if (event.candidate) {
+                sendEvent({ activity: 'webrtc-ice', candidate: event.candidate, senderId: myId });
+            }
         };
-    }, []); 
 
-    useEffect(() => {
-        const handleSignal = async () => {
+        pc.ontrack = (event) => {
+            const stream = event.streams[0];
+            if (!remoteVideoRef.current?.srcObject) {
+                if (remoteVideoRef.current) remoteVideoRef.current.srcObject = stream;
+                setHasRemoteVideo(true);
+            } else if (remoteVideoRef.current.srcObject !== stream) {
+                if (screenVideoRef.current) screenVideoRef.current.srcObject = stream;
+                setHasScreenShare(true);
+            }
+        };
+
+        navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+            .then(stream => {
+                setLocalStream(stream);
+                if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+                stream.getTracks().forEach(track => pc.addTrack(track, stream));
+            })
+            .catch(err => {
+                console.error("Failed to get local media", err);
+                alert("Could not access camera/microphone. Please allow permissions in your browser.");
+            });
+
+        const handleSyncEvent = async (e: any) => {
+            const event = e.detail;
             const pc = pcRef.current;
-            if (!pc || !lastEvent) return;
+            if (!pc || !event || !event.activity.startsWith('webrtc')) return;
+
+            const isPolite = myId > event.senderId;
 
             try {
-                if (lastEvent.activity === 'webrtc-offer') {
-                    await pc.setRemoteDescription(new RTCSessionDescription(lastEvent.sdp));
+                if (event.activity === 'webrtc-offer') {
+                    const offerCollision = makingOfferRef.current || pc.signalingState !== 'stable';
+                    ignoreOfferRef.current = !isPolite && offerCollision;
+
+                    if (ignoreOfferRef.current) return;
+
+                    if (offerCollision) {
+                        await pc.setLocalDescription({ type: 'rollback' });
+                    }
+
+                    await pc.setRemoteDescription(new RTCSessionDescription(event.sdp));
                     const answer = await pc.createAnswer();
                     await pc.setLocalDescription(answer);
-                    sendEvent({ activity: 'webrtc-answer', sdp: pc.localDescription });
+                    sendEvent({ activity: 'webrtc-answer', sdp: pc.localDescription, senderId: myId });
                 } 
-                else if (lastEvent.activity === 'webrtc-answer') {
-                    await pc.setRemoteDescription(new RTCSessionDescription(lastEvent.sdp));
+                else if (event.activity === 'webrtc-answer') {
+                    if (!ignoreOfferRef.current) {
+                        await pc.setRemoteDescription(new RTCSessionDescription(event.sdp));
+                    }
                 } 
-                else if (lastEvent.activity === 'webrtc-ice') {
-                    await pc.addIceCandidate(new RTCIceCandidate(lastEvent.candidate));
+                else if (event.activity === 'webrtc-ice') {
+                    try {
+                        await pc.addIceCandidate(new RTCIceCandidate(event.candidate));
+                    } catch (err) {
+                        if (!ignoreOfferRef.current) console.error("ICE error", err);
+                    }
                 }
             } catch (err) {
                 console.error("Signaling error:", err);
             }
         };
 
-        handleSignal();
-    }, [lastEvent]);
+        window.addEventListener('sync-game-event', handleSyncEvent);
+
+        return () => {
+            window.removeEventListener('sync-game-event', handleSyncEvent);
+            pc.getSenders().forEach(sender => sender.track?.stop());
+            pc.close();
+        };
+    }, [myId]); 
 
     const toggleScreenShare = async () => {
         if (screenStream) {
@@ -1449,12 +1467,11 @@ function WatchTogether({ sendEvent, lastEvent, onBack }: { sendEvent: Function, 
             setScreenStream(null);
             setHasScreenShare(false);
             
-            const senders = pcRef.current?.getSenders() || [];
-            senders.forEach(sender => {
-                if (sender.track?.kind === 'video' && sender.track.label.includes('screen')) {
-                    pcRef.current?.removeTrack(sender);
-                }
+            screenSendersRef.current.forEach(sender => {
+                try { pcRef.current?.removeTrack(sender); } catch(e) {}
             });
+            screenSendersRef.current = [];
+            
             if (screenVideoRef.current) screenVideoRef.current.srcObject = null;
         } else {
             try {
@@ -1464,12 +1481,15 @@ function WatchTogether({ sendEvent, lastEvent, onBack }: { sendEvent: Function, 
                 
                 if (screenVideoRef.current) screenVideoRef.current.srcObject = stream;
 
+                const senders: RTCRtpSender[] = [];
                 stream.getTracks().forEach(track => {
-                    pcRef.current?.addTrack(track, stream);
+                    const sender = pcRef.current?.addTrack(track, stream);
+                    if (sender) senders.push(sender);
                     track.onended = () => {
                         toggleScreenShare(); 
                     };
                 });
+                screenSendersRef.current = senders;
             } catch (err) {
                 console.error("Screen share error", err);
             }
