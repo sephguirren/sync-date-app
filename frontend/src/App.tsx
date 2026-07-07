@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { Heart, Pencil, Image as ImageIcon, ArrowLeft, Loader2, Camera, Download, RotateCcw, Scale, Gavel, Timer, Trophy, HelpCircle, MonitorPlay, Map, MonitorUp, Mic, MicOff, Video, VideoOff, MessageCircle, Send, X } from 'lucide-react';
+import { Heart, Pencil, Image as ImageIcon, ArrowLeft, Loader2, Camera, Download, RotateCcw, Scale, Gavel, Timer, Trophy, HelpCircle, MonitorPlay, Map, MonitorUp, Mic, MicOff, Video, VideoOff, MessageCircle, Send } from 'lucide-react';
 
 type ViewState = 'HOME' | 'HOST_LOBBY' | 'JOIN_LOBBY' | 'HUB' | 'DRAWING' | 'PHOTO_BOOTH' | 'DEBATE' | 'QUIZ' | 'WATCH_TOGETHER';
 
@@ -15,9 +15,9 @@ export default function App() {
     const [partnerConnected, setPartnerConnected] = useState(false);
     const [disconnectWarning, setDisconnectWarning] = useState('');
     
-    // Timer Refs for Heartbeat and Expiration
+    // Vercel-friendly Browser Timers
     const partnerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const roomExpirationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const expireTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     
     // Persistent IDs & Room Memory
     const [myId] = useState(() => localStorage.getItem('sync_userId') || Math.random().toString(36).substring(2, 9));
@@ -47,6 +47,7 @@ export default function App() {
         stateRef.current = { view, roomCode, joinInput };
     }, [view, roomCode, joinInput]);
 
+    // --- Network & WebSocket Initialization ---
     useEffect(() => {
         if (networkMode === 'demo') {
             const channel = new BroadcastChannel('sync-app-demo');
@@ -58,11 +59,9 @@ export default function App() {
 
                 if (type === 'JOIN_REQUEST' && state.view === 'HOST_LOBBY' && payload.code === state.roomCode) {
                     channel.postMessage({ type: 'ROOM_READY', payload: { code: state.roomCode } });
-                    setPartnerConnected(true);
-                    setView('HUB');
+                    setView('HUB'); // Start as offline until ping returns
                 } else if (type === 'ROOM_READY' && state.view === 'JOIN_LOBBY' && payload.code === state.joinInput) {
-                    setPartnerConnected(true);
-                    setView('HUB');
+                    setView('HUB'); // Start as offline until ping returns
                 } else if (type === 'GAME_EVENT') {
                     if (payload?.activity === 'sync-screen') {
                         setView(payload.screen);
@@ -70,10 +69,7 @@ export default function App() {
                         setLastEvent(payload);
                     }
                 } else if (type === 'PEER_DISCONNECT') {
-                    setPartnerConnected(false);
-                    setDisconnectWarning("Your partner got disconnected.");
-                    setTimeout(() => setDisconnectWarning(''), 5000);
-                    if (partnerTimeoutRef.current) clearTimeout(partnerTimeoutRef.current);
+                    handlePartnerDrop();
                 } else if (type === 'CHAT_MESSAGE') {
                     setChatMessages(prev => [...prev, payload]);
                     if (!isChatOpenRef.current) setUnreadCount(prev => prev + 1);
@@ -81,7 +77,7 @@ export default function App() {
             };
             return () => channel.close();
         } else {
-            // Your Render URL
+            // Socket Connection
             const socket = io('https://sync-backend-63p7.onrender.com');
             socketRef.current = socket;
 
@@ -90,8 +86,7 @@ export default function App() {
                 setView('HOST_LOBBY');
             });
             socket.on('room-ready', () => {
-                setPartnerConnected(true);
-                setView('HUB');
+                setView('HUB'); // Start as offline until ping returns
             });
             socket.on('game-event', (event) => {
                 // Bypass React state batching for high-frequency WebRTC signals to prevent drops
@@ -113,10 +108,7 @@ export default function App() {
                 setTimeout(() => setErrorMsg(''), 3000);
             });
             socket.on('peer-disconnected', () => {
-                setPartnerConnected(false);
-                setDisconnectWarning("Your partner got disconnected.");
-                setTimeout(() => setDisconnectWarning(''), 5000);
-                if (partnerTimeoutRef.current) clearTimeout(partnerTimeoutRef.current);
+                handlePartnerDrop();
             });
 
             // Chat Events (Database Powered)
@@ -138,10 +130,11 @@ export default function App() {
         if (activeCode && view === 'HUB') {
             localStorage.setItem('sync_roomCode', activeCode);
             setLastRoomCode(activeCode);
+            startTimers(); // Start watching for partner presence when we join
         }
     }, [view, roomCode, joinInput]);
 
-    // Continuous Ping (Heartbeat) to keep connection alive
+    // Continuous Ping (Heartbeat) to keep connection alive & verify presence
     useEffect(() => {
         if (view !== 'HOME' && view !== 'HOST_LOBBY' && view !== 'JOIN_LOBBY') {
             const sendPing = () => {
@@ -160,7 +153,39 @@ export default function App() {
         }
     }, [view, networkMode]);
 
-    // Reset 30-second timeout whenever we hear ANY event from partner
+    // Helper to start the two-stage disconnect/expire timers
+    const startTimers = () => {
+        if (partnerTimeoutRef.current) clearTimeout(partnerTimeoutRef.current);
+        if (expireTimeoutRef.current) clearTimeout(expireTimeoutRef.current);
+        
+        // Stage 1: Warning after 30 seconds of silence
+        partnerTimeoutRef.current = setTimeout(() => {
+            handlePartnerDrop();
+        }, 30000); 
+    };
+
+    // What happens when partner drops (either directly or via 30s timeout)
+    const handlePartnerDrop = () => {
+        setPartnerConnected(false);
+        setDisconnectWarning("Your partner got disconnected.");
+        setTimeout(() => setDisconnectWarning(''), 5000);
+        
+        if (partnerTimeoutRef.current) clearTimeout(partnerTimeoutRef.current);
+        if (expireTimeoutRef.current) clearTimeout(expireTimeoutRef.current);
+
+        // Stage 2: Expire Room completely after 30 MORE seconds (60 seconds total)
+        expireTimeoutRef.current = setTimeout(() => {
+            setView('HOME');
+            setRoomCode('');
+            setJoinInput('');
+            localStorage.removeItem('sync_roomCode');
+            setLastRoomCode('');
+            setDisconnectWarning("Room expired. Partner didn't reconnect in time.");
+            setTimeout(() => setDisconnectWarning(''), 5000);
+        }, 30000);
+    };
+
+    // Reset timers whenever we hear ANY event from partner
     useEffect(() => {
         if (lastEvent) {
             setPartnerConnected(true);
@@ -174,48 +199,16 @@ export default function App() {
                 }
             }
 
-            if (partnerTimeoutRef.current) clearTimeout(partnerTimeoutRef.current);
-            
-            partnerTimeoutRef.current = setTimeout(() => {
-                setPartnerConnected(false);
-                setDisconnectWarning("Your partner got disconnected.");
-                setTimeout(() => setDisconnectWarning(''), 5000);
-            }, 30000); // 30 seconds without hearing from partner
+            // Acknowledge presence and reset the doom clocks
+            startTimers();
         }
     }, [lastEvent, networkMode]);
 
-    // Room Expiration (30 seconds after partner disconnects)
-    useEffect(() => {
-        const activeCode = roomCode || joinInput;
-        
-        if (activeCode && !partnerConnected && view !== 'HOME' && view !== 'HOST_LOBBY' && view !== 'JOIN_LOBBY') {
-            if (roomExpirationTimeoutRef.current) clearTimeout(roomExpirationTimeoutRef.current);
-            
-            roomExpirationTimeoutRef.current = setTimeout(() => {
-                // Wipe the room memory
-                localStorage.removeItem('sync_roomCode');
-                setLastRoomCode('');
-                setRoomCode('');
-                setJoinInput('');
-                setView('HOME');
-                setIsChatOpen(false);
-                setDisconnectWarning("Room expired. Partner didn't reconnect in time.");
-                setTimeout(() => setDisconnectWarning(''), 5000);
-            }, 30000); // 30 seconds expiration
-        } else {
-            // Cancel expiration timer if partner reconnects
-            if (roomExpirationTimeoutRef.current) {
-                clearTimeout(roomExpirationTimeoutRef.current);
-                roomExpirationTimeoutRef.current = null;
-            }
-        }
-    }, [partnerConnected, roomCode, joinInput, view]);
-
-    // Clean up timeout when component unmounts
+    // Clean up timeouts when component unmounts
     useEffect(() => {
         return () => {
             if (partnerTimeoutRef.current) clearTimeout(partnerTimeoutRef.current);
-            if (roomExpirationTimeoutRef.current) clearTimeout(roomExpirationTimeoutRef.current);
+            if (expireTimeoutRef.current) clearTimeout(expireTimeoutRef.current);
         };
     }, []);
 
@@ -262,49 +255,59 @@ export default function App() {
     };
 
     const renderHome = () => (
-        <div className="flex flex-col min-h-screen w-full max-w-md mx-auto px-6">
-            <div className="flex-1 flex flex-col items-center justify-center w-full py-10">
-                <div className="w-20 h-20 bg-rose-100 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-sm rotate-3">
-                    <Heart className="text-rose-500 w-10 h-10 fill-rose-500 animate-pulse" />
-                </div>
-                <h1 className="text-4xl font-extrabold text-gray-900 mb-3 tracking-tight text-center">Sync</h1>
-                <p className="text-gray-500 mb-10 text-lg text-center">Fun dates & activities for long distance relationships.</p>
+        <div className="absolute inset-0 bg-white flex flex-col items-center w-full z-10 overflow-y-auto">
+            <div className="flex flex-col min-h-full max-w-md mx-auto w-full px-6">
+                <div className="flex-1 flex flex-col items-center justify-center w-full py-10 mt-12">
+                    
+                    <div className="flex flex-col items-center justify-center mb-16">
+                        {/* Custom Double Heart Logo */}
+                        <svg viewBox="0 0 100 100" className="w-32 h-32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            {/* Outer swooping stroke */}
+                            <path d="M50 85 C 10 55, 5 25, 25 10 C 38 0, 48 10, 50 20 C 52 10, 62 0, 75 10 C 95 25, 90 55, 50 85 Z" stroke="#FF1010" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
+                            {/* Inner swooping stroke */}
+                            <path d="M50 75 C 20 50, 15 30, 28 18 C 38 10, 46 16, 50 26 C 54 16, 62 10, 72 18 C 85 30, 80 50, 50 75 Z" stroke="#FF1010" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                        <h1 className="text-5xl font-serif italic text-gray-900 mt-2 tracking-tight">Sync</h1>
+                    </div>
 
-                <div className="w-full space-y-4">
-                    {lastRoomCode && (
-                        <button 
-                            onClick={() => {
-                                setJoinInput(lastRoomCode);
-                                if (networkMode === 'demo') {
-                                    channelRef.current?.postMessage({ type: 'JOIN_REQUEST', payload: { code: lastRoomCode } });
-                                } else {
-                                    socketRef.current?.emit('join-room', lastRoomCode);
-                                }
-                            }} 
-                            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl py-4 font-bold text-lg transition-all active:scale-[0.98] shadow-lg shadow-emerald-200"
-                        >
-                            Reconnect to {lastRoomCode}
+                    <p className="text-gray-500 mb-10 text-lg text-center font-medium">Fun dates & activities for long distance relationships.</p>
+
+                    <div className="w-full space-y-4">
+                        {lastRoomCode && (
+                            <button 
+                                onClick={() => {
+                                    setJoinInput(lastRoomCode);
+                                    if (networkMode === 'demo') {
+                                        channelRef.current?.postMessage({ type: 'JOIN_REQUEST', payload: { code: lastRoomCode } });
+                                    } else {
+                                        socketRef.current?.emit('join-room', lastRoomCode);
+                                    }
+                                }} 
+                                className="w-full bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl py-4 font-bold text-lg transition-all active:scale-[0.98] shadow-lg shadow-emerald-200"
+                            >
+                                Reconnect to {lastRoomCode}
+                            </button>
+                        )}
+                        <button onClick={createRoom} className="w-full bg-rose-500 hover:bg-rose-600 text-white rounded-2xl py-4 font-bold text-lg transition-all active:scale-[0.98] shadow-lg shadow-rose-200">
+                            Create a Date
                         </button>
-                    )}
-                    <button onClick={createRoom} className="w-full bg-rose-500 hover:bg-rose-600 text-white rounded-2xl py-4 font-bold text-lg transition-all active:scale-[0.98] shadow-lg shadow-rose-200">
-                        Create a Date
-                    </button>
-                    <button onClick={() => setView('JOIN_LOBBY')} className="w-full bg-white border-2 border-rose-100 text-rose-600 hover:bg-rose-50 rounded-2xl py-4 font-bold text-lg transition-all active:scale-[0.98]">
-                        Join with Code
-                    </button>
+                        <button onClick={() => setView('JOIN_LOBBY')} className="w-full bg-white border-2 border-rose-100 text-rose-600 hover:bg-rose-50 rounded-2xl py-4 font-bold text-lg transition-all active:scale-[0.98]">
+                            Join with Code
+                        </button>
+                    </div>
                 </div>
+                
+                <footer className="w-full py-6 mt-auto text-center border-t border-gray-100">
+                    <p className="text-xs text-gray-400 font-medium mb-2">
+                        &copy; 2026 Mark Joseph Guirren. All rights reserved.
+                    </p>
+                    <div className="flex justify-center items-center gap-4 text-xs text-gray-400">
+                        <button onClick={() => setLegalModal('PRIVACY')} className="hover:text-gray-600 transition-colors">Privacy Policy</button>
+                        <span>&middot;</span>
+                        <button onClick={() => setLegalModal('TERMS')} className="hover:text-gray-600 transition-colors">Terms of Service</button>
+                    </div>
+                </footer>
             </div>
-            
-            <footer className="w-full py-6 mt-auto text-center border-t border-rose-100/50">
-                <p className="text-xs text-gray-400 font-medium mb-2">
-                    &copy; 2026 Mark Joseph Guirren. All rights reserved.
-                </p>
-                <div className="flex justify-center items-center gap-4 text-xs text-rose-500/70">
-                    <button onClick={() => setLegalModal('PRIVACY')} className="hover:text-rose-600 transition-colors">Privacy Policy</button>
-                    <span>&middot;</span>
-                    <button onClick={() => setLegalModal('TERMS')} className="hover:text-rose-600 transition-colors">Terms of Service</button>
-                </div>
-            </footer>
         </div>
     );
 
@@ -506,7 +509,7 @@ export default function App() {
             {/* Global Legal Modal */}
             {renderLegalModal()}
 
-            {/* Disconnect Warning Notification */}
+            {/* Disconnect / Expire Warning Notification */}
             {disconnectWarning && (
                 <div className="fixed top-8 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-2xl z-[100] animate-in slide-in-from-top-4 fade-in flex items-center gap-3">
                     <span className="relative flex h-3 w-3 shrink-0">
@@ -532,6 +535,12 @@ export default function App() {
                         )}
                     </button>
 
+                    {isChatOpen && (
+                        <div 
+                            className="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 transition-opacity duration-300 pointer-events-auto"
+                            onClick={() => setIsChatOpen(false)}
+                        />
+                    )}
                     <ChatDrawer
                         isOpen={isChatOpen}
                         onClose={() => setIsChatOpen(false)}
@@ -546,6 +555,7 @@ export default function App() {
     );
 }
 
+// --- Component: Sliding Chat Drawer ---
 function ChatDrawer({ isOpen, onClose, messages, onSendMessage, myId, partnerConnected }: { isOpen: boolean, onClose: () => void, messages: any[], onSendMessage: (txt: string) => void, myId: string, partnerConnected: boolean }) {
     const [inputText, setInputText] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -564,79 +574,73 @@ function ChatDrawer({ isOpen, onClose, messages, onSendMessage, myId, partnerCon
     };
 
     return (
-        <>
-            <div 
-                className={`fixed inset-0 bg-black/20 backdrop-blur-sm z-50 transition-opacity duration-300 ${isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`} 
-                onClick={onClose}
-            />
+        <div className={`fixed right-0 top-0 bottom-0 w-full sm:w-[400px] bg-rose-50/95 backdrop-blur-xl shadow-2xl z-50 flex flex-col border-l border-white/40 transform transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
             
-            <div className={`fixed right-0 top-0 bottom-0 w-full sm:w-[400px] bg-rose-50/95 backdrop-blur-xl shadow-2xl z-50 flex flex-col border-l border-white/40 transform transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-                
-                <div className="bg-white/80 backdrop-blur-md p-4 flex items-center justify-between border-b border-rose-100 shadow-sm z-10 shrink-0">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-rose-100 rounded-full flex items-center justify-center">
-                            <Heart className="w-5 h-5 text-rose-500 fill-rose-500" />
-                        </div>
-                        <div>
-                            <h3 className="font-bold text-gray-900 leading-tight">Couple's Chat</h3>
-                            <p className={`text-xs font-medium flex items-center gap-1 ${partnerConnected ? 'text-emerald-500' : 'text-gray-400'}`}>
-                                <span className={`w-1.5 h-1.5 rounded-full ${partnerConnected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'}`} /> 
-                                {partnerConnected ? 'Connected' : 'Offline'}
-                            </p>
-                        </div>
+            <div className="bg-white/80 backdrop-blur-md p-4 flex items-center justify-between border-b border-rose-100 shadow-sm z-10 shrink-0">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-rose-100 rounded-full flex items-center justify-center">
+                        <Heart className="w-5 h-5 text-rose-500 fill-rose-500" />
                     </div>
-                    <button onClick={onClose} className="p-2 bg-gray-50 hover:bg-gray-100 text-gray-500 rounded-full transition-colors active:scale-95">
-                        <X className="w-5 h-5" />
-                    </button>
+                    <div>
+                        <h3 className="font-bold text-gray-900 leading-tight">Couple's Chat</h3>
+                        <p className={`text-xs font-medium flex items-center gap-1 ${partnerConnected ? 'text-emerald-500' : 'text-gray-400'}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${partnerConnected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'}`} /> 
+                            {partnerConnected ? 'Connected' : 'Offline'}
+                        </p>
+                    </div>
                 </div>
-
-                <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                    {messages.length === 0 ? (
-                        <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-3 opacity-60">
-                            <MessageCircle className="w-12 h-12" />
-                            <p className="text-sm font-medium">No messages yet. Say hi! 👋</p>
-                        </div>
-                    ) : (
-                        messages.map((msg, idx) => {
-                            const isMe = msg.senderId === myId;
-                            const time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-                            
-                            return (
-                                <div key={idx} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                                    <div className={`px-4 py-3 max-w-[85%] ${isMe ? 'bg-rose-500 text-white rounded-2xl rounded-tr-sm shadow-md shadow-rose-200' : 'bg-white text-gray-800 rounded-2xl rounded-tl-sm shadow-sm border border-rose-50'}`}>
-                                        <p className="text-[15px] leading-relaxed break-words">{msg.text}</p>
-                                    </div>
-                                    {time && <span className="text-[10px] text-gray-400 mt-1 px-1 font-medium">{time}</span>}
-                                </div>
-                            );
-                        })
-                    )}
-                    <div ref={messagesEndRef} />
-                </div>
-
-                <div className="p-4 bg-white/80 backdrop-blur-md border-t border-rose-100 shrink-0">
-                    <form onSubmit={handleSend} className="relative flex items-center">
-                        <input
-                            type="text"
-                            value={inputText}
-                            onChange={e => setInputText(e.target.value)}
-                            placeholder="Type a message..."
-                            className="w-full bg-gray-50 border border-gray-200 text-gray-800 rounded-full pl-5 pr-14 py-3.5 focus:outline-none focus:border-rose-400 focus:ring-4 focus:ring-rose-100 transition-all text-[15px]"
-                        />
-                        <button 
-                            type="submit"
-                            disabled={!inputText.trim()}
-                            className="absolute right-2 bg-rose-500 disabled:bg-rose-300 text-white w-10 h-10 rounded-full flex items-center justify-center shadow-md transition-transform active:scale-90 disabled:shadow-none"
-                        >
-                            <Send className="w-4 h-4 ml-0.5" />
-                        </button>
-                    </form>
-                </div>
+                <button onClick={onClose} className="p-2 bg-gray-50 hover:bg-gray-100 text-gray-500 rounded-full transition-colors active:scale-95">
+                    <X className="w-5 h-5" />
+                </button>
             </div>
-        </>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {messages.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-3 opacity-60">
+                        <MessageCircle className="w-12 h-12" />
+                        <p className="text-sm font-medium">No messages yet. Say hi! 👋</p>
+                    </div>
+                ) : (
+                    messages.map((msg, idx) => {
+                        const isMe = msg.senderId === myId;
+                        const time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+                        
+                        return (
+                            <div key={idx} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                                <div className={`px-4 py-3 max-w-[85%] ${isMe ? 'bg-rose-500 text-white rounded-2xl rounded-tr-sm shadow-md shadow-rose-200' : 'bg-white text-gray-800 rounded-2xl rounded-tl-sm shadow-sm border border-rose-50'}`}>
+                                    <p className="text-[15px] leading-relaxed break-words">{msg.text}</p>
+                                </div>
+                                {time && <span className="text-[10px] text-gray-400 mt-1 px-1 font-medium">{time}</span>}
+                            </div>
+                        );
+                    })
+                )}
+                <div ref={messagesEndRef} />
+            </div>
+
+            <div className="p-4 bg-white/80 backdrop-blur-md border-t border-rose-100 shrink-0">
+                <form onSubmit={handleSend} className="relative flex items-center">
+                    <input
+                        type="text"
+                        value={inputText}
+                        onChange={e => setInputText(e.target.value)}
+                        placeholder="Type a message..."
+                        className="w-full bg-gray-50 border border-gray-200 text-gray-800 rounded-full pl-5 pr-14 py-3.5 focus:outline-none focus:border-rose-400 focus:ring-4 focus:ring-rose-100 transition-all text-[15px]"
+                    />
+                    <button 
+                        type="submit"
+                        disabled={!inputText.trim()}
+                        className="absolute right-2 bg-rose-500 disabled:bg-rose-300 text-white w-10 h-10 rounded-full flex items-center justify-center shadow-md transition-transform active:scale-90 disabled:shadow-none"
+                    >
+                        <Send className="w-4 h-4 ml-0.5" />
+                    </button>
+                </form>
+            </div>
+        </div>
     );
 }
 
+// --- Component: Drawing Game ---
 function DrawingGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, lastEvent: any, onBack: () => void }) {
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -762,6 +766,7 @@ function DrawingGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, la
     );
 }
 
+// --- Component: PhotoBooth Game ---
 type PhotoFrame = { local: string | null; peer: string | null };
 
 function PhotoBooth({ sendEvent, lastEvent, onBack, roomCode }: { sendEvent: Function, lastEvent: any, onBack: () => void, roomCode: string }) {
@@ -1051,6 +1056,7 @@ function PhotoBooth({ sendEvent, lastEvent, onBack, roomCode }: { sendEvent: Fun
     );
 }
 
+// --- Component: Debate Game ---
 function DebateGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, lastEvent: any, onBack: () => void }) {
     const [step, setStep] = useState<'SETUP' | 'DEBATING' | 'JUDGING' | 'RESULT'>('SETUP');
     const [topic, setTopic] = useState('');
@@ -1227,6 +1233,7 @@ function DebateGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, las
     );
 }
 
+// --- Component: Quiz Game ---
 function QuizGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, lastEvent: any, onBack: () => void }) {
     const [step, setStep] = useState<'SETUP' | 'ANSWERING' | 'REVEAL' | 'END'>('SETUP');
     const [questions, setQuestions] = useState<string[]>([]);
@@ -1420,6 +1427,7 @@ function QuizGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, lastE
     );
 }
 
+// --- Component: Watch Together ---
 function WatchTogether({ sendEvent, onBack, myId }: { sendEvent: Function, onBack: () => void, myId: string }) {
     const localVideoRef = useRef<HTMLVideoElement>(null);
     const remoteVideoRef = useRef<HTMLVideoElement>(null);
