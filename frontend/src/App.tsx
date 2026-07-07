@@ -14,7 +14,7 @@ export default function App() {
     const [legalModal, setLegalModal] = useState<'NONE' | 'PRIVACY' | 'TERMS'>('NONE');
     const [partnerConnected, setPartnerConnected] = useState(false);
     const [disconnectWarning, setDisconnectWarning] = useState('');
-    const partnerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const partnerTimeoutRef = useRef<returnType<typeof setTimeout> | null>(null);
     
     // Persistent IDs & Room Memory
     const [myId] = useState(() => localStorage.getItem('sync_userId') || Math.random().toString(36).substring(2, 9));
