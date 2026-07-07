@@ -14,7 +14,10 @@ export default function App() {
     const [legalModal, setLegalModal] = useState<'NONE' | 'PRIVACY' | 'TERMS'>('NONE');
     const [partnerConnected, setPartnerConnected] = useState(false);
     const [disconnectWarning, setDisconnectWarning] = useState('');
+    
+    // Timer Refs for Heartbeat and Expiration
     const partnerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const roomExpirationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     
     // Persistent IDs & Room Memory
     const [myId] = useState(() => localStorage.getItem('sync_userId') || Math.random().toString(36).substring(2, 9));
@@ -181,10 +184,38 @@ export default function App() {
         }
     }, [lastEvent, networkMode]);
 
+    // Room Expiration (30 seconds after partner disconnects)
+    useEffect(() => {
+        const activeCode = roomCode || joinInput;
+        
+        if (activeCode && !partnerConnected && view !== 'HOME' && view !== 'HOST_LOBBY' && view !== 'JOIN_LOBBY') {
+            if (roomExpirationTimeoutRef.current) clearTimeout(roomExpirationTimeoutRef.current);
+            
+            roomExpirationTimeoutRef.current = setTimeout(() => {
+                // Wipe the room memory
+                localStorage.removeItem('sync_roomCode');
+                setLastRoomCode('');
+                setRoomCode('');
+                setJoinInput('');
+                setView('HOME');
+                setIsChatOpen(false);
+                setDisconnectWarning("Room expired. Partner didn't reconnect in time.");
+                setTimeout(() => setDisconnectWarning(''), 5000);
+            }, 30000); // 30 seconds expiration
+        } else {
+            // Cancel expiration timer if partner reconnects
+            if (roomExpirationTimeoutRef.current) {
+                clearTimeout(roomExpirationTimeoutRef.current);
+                roomExpirationTimeoutRef.current = null;
+            }
+        }
+    }, [partnerConnected, roomCode, joinInput, view]);
+
     // Clean up timeout when component unmounts
     useEffect(() => {
         return () => {
             if (partnerTimeoutRef.current) clearTimeout(partnerTimeoutRef.current);
+            if (roomExpirationTimeoutRef.current) clearTimeout(roomExpirationTimeoutRef.current);
         };
     }, []);
 
@@ -241,31 +272,19 @@ export default function App() {
 
                 <div className="w-full space-y-4">
                     {lastRoomCode && (
-                        <div className="flex gap-2 w-full">
-                            <button 
-                                onClick={() => {
-                                    setJoinInput(lastRoomCode);
-                                    if (networkMode === 'demo') {
-                                        channelRef.current?.postMessage({ type: 'JOIN_REQUEST', payload: { code: lastRoomCode } });
-                                    } else {
-                                        socketRef.current?.emit('join-room', lastRoomCode);
-                                    }
-                                }} 
-                                className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl py-4 font-bold text-lg transition-all active:scale-[0.98] shadow-lg shadow-emerald-200"
-                            >
-                                Reconnect to {lastRoomCode}
-                            </button>
-                            <button 
-                                onClick={() => {
-                                    localStorage.removeItem('sync_roomCode');
-                                    setLastRoomCode('');
-                                }}
-                                className="w-16 bg-white border-2 border-gray-100 hover:bg-red-50 text-gray-400 hover:text-red-500 hover:border-red-100 rounded-2xl flex items-center justify-center transition-all active:scale-[0.98] shadow-sm"
-                                title="Forget Room"
-                            >
-                                <X className="w-6 h-6" />
-                            </button>
-                        </div>
+                        <button 
+                            onClick={() => {
+                                setJoinInput(lastRoomCode);
+                                if (networkMode === 'demo') {
+                                    channelRef.current?.postMessage({ type: 'JOIN_REQUEST', payload: { code: lastRoomCode } });
+                                } else {
+                                    socketRef.current?.emit('join-room', lastRoomCode);
+                                }
+                            }} 
+                            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl py-4 font-bold text-lg transition-all active:scale-[0.98] shadow-lg shadow-emerald-200"
+                        >
+                            Reconnect to {lastRoomCode}
+                        </button>
                     )}
                     <button onClick={createRoom} className="w-full bg-rose-500 hover:bg-rose-600 text-white rounded-2xl py-4 font-bold text-lg transition-all active:scale-[0.98] shadow-lg shadow-rose-200">
                         Create a Date
