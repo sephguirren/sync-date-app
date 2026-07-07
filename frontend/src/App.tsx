@@ -13,6 +13,8 @@ export default function App() {
     const [errorMsg, setErrorMsg] = useState('');
     const [legalModal, setLegalModal] = useState<'NONE' | 'PRIVACY' | 'TERMS'>('NONE');
     const [partnerConnected, setPartnerConnected] = useState(false);
+    const [disconnectWarning, setDisconnectWarning] = useState('');
+    const partnerTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     
     // Persistent IDs & Room Memory
     const [myId] = useState(() => localStorage.getItem('sync_userId') || Math.random().toString(36).substring(2, 9));
@@ -66,6 +68,9 @@ export default function App() {
                     }
                 } else if (type === 'PEER_DISCONNECT') {
                     setPartnerConnected(false);
+                    setDisconnectWarning("Your partner got disconnected.");
+                    setTimeout(() => setDisconnectWarning(''), 5000);
+                    if (partnerTimeoutRef.current) clearTimeout(partnerTimeoutRef.current);
                 } else if (type === 'CHAT_MESSAGE') {
                     setChatMessages(prev => [...prev, payload]);
                     if (!isChatOpenRef.current) setUnreadCount(prev => prev + 1);
@@ -106,6 +111,9 @@ export default function App() {
             });
             socket.on('peer-disconnected', () => {
                 setPartnerConnected(false);
+                setDisconnectWarning("Your partner got disconnected.");
+                setTimeout(() => setDisconnectWarning(''), 5000);
+                if (partnerTimeoutRef.current) clearTimeout(partnerTimeoutRef.current);
             });
 
             // Chat Events (Database Powered)
@@ -130,21 +138,55 @@ export default function App() {
         }
     }, [view, roomCode, joinInput]);
 
-    // Ping/Pong to sync online status when someone reconnects
+    // Continuous Ping (Heartbeat) to keep connection alive
     useEffect(() => {
-        if (view === 'HUB') {
-            setTimeout(() => sendGameEvent({ activity: 'ping' }), 500);
+        if (view !== 'HOME' && view !== 'HOST_LOBBY' && view !== 'JOIN_LOBBY') {
+            const sendPing = () => {
+                const code = stateRef.current.roomCode || stateRef.current.joinInput;
+                if (networkMode === 'demo') {
+                    channelRef.current?.postMessage({ type: 'GAME_EVENT', payload: { activity: 'ping' } });
+                } else {
+                    socketRef.current?.emit('game-event', { code, event: { activity: 'ping' } });
+                }
+            };
+            
+            sendPing(); // Initial ping
+            const pingInterval = setInterval(sendPing, 10000); // Ping every 10 seconds
+            
+            return () => clearInterval(pingInterval);
         }
-    }, [view]);
+    }, [view, networkMode]);
 
+    // Reset 30-second timeout whenever we hear ANY event from partner
     useEffect(() => {
-        if (lastEvent?.activity === 'ping') {
+        if (lastEvent) {
             setPartnerConnected(true);
-            sendGameEvent({ activity: 'pong' });
-        } else if (lastEvent?.activity === 'pong') {
-            setPartnerConnected(true);
+            
+            if (lastEvent.activity === 'ping') {
+                const code = stateRef.current.roomCode || stateRef.current.joinInput;
+                if (networkMode === 'demo') {
+                    channelRef.current?.postMessage({ type: 'GAME_EVENT', payload: { activity: 'pong' } });
+                } else {
+                    socketRef.current?.emit('game-event', { code, event: { activity: 'pong' } });
+                }
+            }
+
+            if (partnerTimeoutRef.current) clearTimeout(partnerTimeoutRef.current);
+            
+            partnerTimeoutRef.current = setTimeout(() => {
+                setPartnerConnected(false);
+                setDisconnectWarning("Your partner got disconnected.");
+                setTimeout(() => setDisconnectWarning(''), 5000);
+            }, 30000); // 30 seconds without hearing from partner
         }
-    }, [lastEvent]);
+    }, [lastEvent, networkMode]);
+
+    // Clean up timeout when component unmounts
+    useEffect(() => {
+        return () => {
+            if (partnerTimeoutRef.current) clearTimeout(partnerTimeoutRef.current);
+        };
+    }, []);
 
     const createRoom = () => {
         if (networkMode === 'demo') {
@@ -444,6 +486,17 @@ export default function App() {
 
             {/* Global Legal Modal */}
             {renderLegalModal()}
+
+            {/* Disconnect Warning Notification */}
+            {disconnectWarning && (
+                <div className="fixed top-8 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-2xl z-[100] animate-in slide-in-from-top-4 fade-in flex items-center gap-3">
+                    <span className="relative flex h-3 w-3 shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                    </span>
+                    <span className="font-medium text-sm whitespace-nowrap">{disconnectWarning}</span>
+                </div>
+            )}
 
             {/* Global Chat Overlay */}
             {(roomCode || joinInput) && view !== 'HOME' && view !== 'HOST_LOBBY' && view !== 'JOIN_LOBBY' && (
