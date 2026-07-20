@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { Heart, Pencil, Image as ImageIcon, ArrowLeft, Loader2, Camera, Download, RotateCcw, Scale, Gavel, Timer, Trophy, HelpCircle, MonitorPlay, Map, MonitorUp, Mic, MicOff, Video, VideoOff, MessageCircle, Send, X } from 'lucide-react';
+import { Heart, Pencil, Image as ImageIcon, ArrowLeft, Loader2, Camera, Download, RotateCcw, Scale, Gavel, Timer, Trophy, HelpCircle, MonitorPlay, Map, MonitorUp, Mic, MicOff, Video, VideoOff, MessageCircle, Send, X, Eraser, Trash2 } from 'lucide-react';
 
 type ViewState = 'HOME' | 'HOST_LOBBY' | 'JOIN_LOBBY' | 'HUB' | 'DRAWING' | 'PHOTO_BOOTH' | 'DEBATE' | 'QUIZ' | 'WATCH_TOGETHER';
 
@@ -671,9 +671,11 @@ function DrawingGame({ sendEvent, onBack }: { sendEvent: Function, onBack: () =>
     // FAST LANE: Listen for direct custom events to bypass React's batching speed limit
     useEffect(() => {
         const handleRemoteDraw = (e: any) => {
-            const { data } = e.detail;
-            if (data) {
-                drawOnCanvas(data.x0, data.y0, data.x1, data.y1, data.color, false);
+            const event = e.detail;
+            if (event.data?.action === 'clear') {
+                clearCanvas(false);
+            } else if (event.data) {
+                drawOnCanvas(event.data.x0, event.data.y0, event.data.x1, event.data.y1, event.data.color, false);
             }
         };
         window.addEventListener('sync-draw-event', handleRemoteDraw);
@@ -712,13 +714,27 @@ function DrawingGame({ sendEvent, onBack }: { sendEvent: Function, onBack: () =>
         ctx.moveTo(x0 * w, y0 * h);
         ctx.lineTo(x1 * w, y1 * h);
         ctx.strokeStyle = col;
-        ctx.lineWidth = 6;
+        // The eraser (white) needs to be significantly thicker than the pen to work well
+        ctx.lineWidth = col === '#FFFFFF' ? 24 : 6; 
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.stroke();
 
         if (emit) {
             sendEvent({ activity: 'draw', data: { x0, y0, x1, y1, color: col } });
+        }
+    };
+
+    const clearCanvas = (emit: boolean) => {
+        const canvas = canvasRef.current;
+        const ctx = canvas?.getContext('2d');
+        if (!canvas || !ctx) return;
+        
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        if (emit) {
+            // Piggyback on the 'draw' event fast-lane to keep it synchronized instantly
+            sendEvent({ activity: 'draw', data: { action: 'clear' } });
         }
     };
 
@@ -754,7 +770,7 @@ function DrawingGame({ sendEvent, onBack }: { sendEvent: Function, onBack: () =>
             >
                 <canvas
                     ref={canvasRef}
-                    className="w-full h-full cursor-crosshair"
+                    className={`w-full h-full ${color === '#FFFFFF' ? 'cursor-cell' : 'cursor-crosshair'}`}
                     onMouseDown={handleStart}
                     onMouseMove={handleMove}
                     onMouseUp={handleEnd}
@@ -765,15 +781,35 @@ function DrawingGame({ sendEvent, onBack }: { sendEvent: Function, onBack: () =>
                 />
             </div>
 
-            <div className="flex justify-center gap-4 mt-4 bg-white p-4 rounded-3xl shadow-sm border border-rose-50">
+            <div className="flex justify-center items-center gap-2 sm:gap-3 mt-4 bg-white p-3 sm:p-4 rounded-3xl shadow-sm border border-rose-50 overflow-x-auto">
                 {colors.map(c => (
                     <button
                         key={c}
                         onClick={() => setColor(c)}
-                        className={`w-10 h-10 rounded-full transition-all ${color === c ? 'scale-110 ring-4 ring-offset-2 ring-rose-200' : 'hover:scale-110'}`}
+                        className={`w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-full transition-all ${color === c ? 'scale-110 ring-4 ring-offset-2 ring-rose-200' : 'hover:scale-110'}`}
                         style={{ backgroundColor: c }}
                     />
                 ))}
+                
+                <div className="w-px h-8 bg-gray-200 mx-1 sm:mx-2 shrink-0" />
+                
+                {/* Eraser Tool */}
+                <button
+                    onClick={() => setColor('#FFFFFF')}
+                    className={`w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-full flex items-center justify-center transition-all bg-gray-100 ${color === '#FFFFFF' ? 'scale-110 ring-4 ring-offset-2 ring-gray-300' : 'hover:scale-110'}`}
+                    title="Eraser"
+                >
+                    <Eraser className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
+                </button>
+
+                {/* Clear Board Tool */}
+                <button
+                    onClick={() => clearCanvas(true)}
+                    className="w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-full flex items-center justify-center transition-all bg-red-50 hover:bg-red-100 text-red-500 hover:scale-110"
+                    title="Clear Board"
+                >
+                    <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                </button>
             </div>
         </div>
     );
