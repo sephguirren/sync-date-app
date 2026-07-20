@@ -481,7 +481,6 @@ export default function App() {
             {view === 'DRAWING' && (
                 <DrawingGame 
                     sendEvent={sendGameEvent} 
-                    lastEvent={lastEvent} 
                     onBack={() => handleSyncScreen('HUB')} 
                 />
             )}
@@ -650,7 +649,7 @@ function ChatDrawer({ isOpen, onClose, messages, onSendMessage, myId, partnerCon
 }
 
 // --- Component: Drawing Game ---
-function DrawingGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, lastEvent: any, onBack: () => void }) {
+function DrawingGame({ sendEvent, onBack }: { sendEvent: Function, onBack: () => void }) {
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [isDrawing, setIsDrawing] = useState(false);
