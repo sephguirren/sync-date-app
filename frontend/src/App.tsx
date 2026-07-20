@@ -65,6 +65,9 @@ export default function App() {
                 } else if (type === 'GAME_EVENT') {
                     if (payload?.activity === 'sync-screen') {
                         setView(payload.screen);
+                    } else if (payload?.activity === 'draw') {
+                        // FAST LANE: Dispatch drawing directly to bypass React state
+                        window.dispatchEvent(new CustomEvent('sync-draw-event', { detail: payload }));
                     } else {
                         setLastEvent(payload);
                     }
@@ -92,6 +95,12 @@ export default function App() {
                 // Bypass React state batching for high-frequency WebRTC signals to prevent drops
                 if (event.activity && event.activity.startsWith('webrtc')) {
                     window.dispatchEvent(new CustomEvent('sync-game-event', { detail: event }));
+                    return;
+                }
+                
+                // FAST LANE: Bypass React state batching for drawing to prevent cut lines
+                if (event.activity === 'draw') {
+                    window.dispatchEvent(new CustomEvent('sync-draw-event', { detail: event }));
                     return;
                 }
                 
@@ -660,12 +669,17 @@ function DrawingGame({ sendEvent, lastEvent, onBack }: { sendEvent: Function, la
         return () => window.removeEventListener('resize', resizeCanvas);
     }, []);
 
+    // FAST LANE: Listen for direct custom events to bypass React's batching speed limit
     useEffect(() => {
-        if (lastEvent?.activity === 'draw') {
-            const { x0, y0, x1, y1, color } = lastEvent.data;
-            drawOnCanvas(x0, y0, x1, y1, color, false);
-        }
-    }, [lastEvent]);
+        const handleRemoteDraw = (e: any) => {
+            const { data } = e.detail;
+            if (data) {
+                drawOnCanvas(data.x0, data.y0, data.x1, data.y1, data.color, false);
+            }
+        };
+        window.addEventListener('sync-draw-event', handleRemoteDraw);
+        return () => window.removeEventListener('sync-draw-event', handleRemoteDraw);
+    }, []);
 
     const getCoordinates = (e: React.MouseEvent | React.TouchEvent) => {
         const canvas = canvasRef.current;
